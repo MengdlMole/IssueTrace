@@ -48,6 +48,7 @@ cmake --install "$build_dir" --prefix "$stage_dir"
 cmake -E rm -rf "$stage_dir/include" "$stage_dir/lib"
 cmake -E copy "$script_dir/qt.conf" "$stage_dir/qt.conf"
 cmake -E copy "$repo_dir/README.md" "$stage_dir/README.md"
+cmake -E copy_directory "$repo_dir/docs" "$stage_dir/docs"
 cmake -E copy "$script_dir/README.md" "$stage_dir/PORTABLE_README.md"
 cmake -E copy "$repo_dir/packaging/dependency-lock.windows-x86_64.json" \
   "$stage_dir/dependency-lock.windows-x86_64.json"

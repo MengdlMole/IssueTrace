@@ -1,4 +1,29 @@
+# CMake and generated build outputs
 /build/
 /cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+Testing/
+cmake_install.cmake
+compile_commands.json
+
+# IDE and editor-local settings
+.idea/
+.vscode/
+*.user
+*.swp
+*~
+
+# Operating-system metadata
 .DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs and temporary files
 *.log
+*.tmp
+*.bak
+
+# Local IssueTrace data must never enter source control
+/IssueTraceWorkspace/
+/IssueTrace-update.log

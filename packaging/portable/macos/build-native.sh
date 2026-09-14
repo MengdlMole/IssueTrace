@@ -49,6 +49,7 @@ cmake -E rm -rf \
 cmake -E copy "$qt_prefix/share/qt/plugins/platforms/libqoffscreen.dylib" \
   "$stage_dir/IssueTrace.app/Contents/PlugIns/platforms/libqoffscreen.dylib"
 cmake -E copy "$repo_dir/README.md" "$stage_dir/README.md"
+cmake -E copy_directory "$repo_dir/docs" "$stage_dir/docs"
 cmake -E copy "$script_dir/README.md" "$stage_dir/PORTABLE_README.md"
 cmake -E copy "$repo_dir/packaging/dependency-lock.macos-arm64.json" \
   "$stage_dir/dependency-lock.macos-$architecture.json"

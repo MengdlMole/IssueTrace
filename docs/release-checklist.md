@@ -33,6 +33,7 @@
 
 ### 许可与供应链
 
+- [ ] 源码进入版本控制，发布 commit 不含未提交改动，并创建不可变版本 tag；
 - [ ] 发布二进制包、对应源码包及各自 SHA-256；
 - [ ] `LICENSE`、`THIRD_PARTY_NOTICES.md`、平台依赖锁和 CycloneDX SBOM 与最终载荷一致；
 - [ ] Qt、libxlsxwriter、zlib、SQLite 和编译器运行库的版本、许可与公开源码地址可追溯；

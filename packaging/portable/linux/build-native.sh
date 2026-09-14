@@ -39,6 +39,7 @@ for static_archive in "$stage_dir"/lib/*.a; do
   fi
 done
 cmake -E copy "$repo_dir/README.md" "$stage_dir/README.md"
+cmake -E copy_directory "$repo_dir/docs" "$stage_dir/docs"
 cmake -E copy "$script_dir/README.md" "$stage_dir/PORTABLE_README.md"
 cmake -E copy "$repo_dir/packaging/dependency-lock.linux.json" \
   "$stage_dir/dependency-lock.linux-$architecture.json"

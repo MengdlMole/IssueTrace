@@ -40,4 +40,4 @@ IssueTrace 只分发完整、解压即用的压缩包，不提供安装器、自
 7. 生成 SHA-256、SBOM 和完整第三方许可包；
 8. 发布后不得覆盖同版本压缩包。
 
-详细安全边界见 `docs/adr/0006-portable-archives-and-offline-upgrades.md`。
+完整发布门槛和当前验收状态见 `docs/release-checklist.md`。
