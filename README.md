@@ -145,7 +145,14 @@ ctest --preset macos-homebrew-debug --output-on-failure
 ./packaging/build-source-archive.sh
 ```
 
-Windows 脚本在 macOS 上生成带 `-dev` 标记的交叉构建包；正式发布应使用目标平台原生流水线。构建脚本会运行测试、部署实际需要的 Qt 模块，并生成发布清单、SBOM 和校验和。
+Windows 11 原生构建推荐使用 PowerShell：
+
+```powershell
+.\packaging\portable\windows\build-native.ps1 `
+  -QtRoot C:\Qt\6.11.1\mingw_64
+```
+
+具体依赖、自动发现规则、输出文件和验证步骤见 [Windows 便携包说明](packaging/portable/windows/README.md)。macOS 交叉构建脚本只生成带 `-dev` 标记的开发包；正式发布必须使用目标平台原生流水线。构建脚本会运行测试、部署实际需要的 Qt 模块，并生成发布清单、SBOM 和校验和。
 
 应用图标以 `resources/icons/issuetrace.svg` 为源；安装 Qt SVG 和 `pkg-config` 后可运行 `./packaging/generate-icons.sh`，重建 macOS、Windows 和通用 PNG 图标。
 

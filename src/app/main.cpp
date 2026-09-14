@@ -5,7 +5,6 @@
 #include <QFileInfo>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
-#include <QQmlContext>
 #include <QQuickWindow>
 #include <QSaveFile>
 #include <QTextStream>
@@ -13,6 +12,7 @@
 #include <QSystemTrayIcon>
 #include <QMenu>
 #include <QPainter>
+#include <qqml.h>
 
 #include <memory>
 
@@ -24,9 +24,8 @@ int main(int argc, char* argv[]) {
         QIcon(QStringLiteral(":/issuetrace/resources/icons/issuetrace-256.png")));
 
     AppController controller;
+    qmlRegisterSingletonInstance("IssueTrace", 1, 0, "App", &controller);
     QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty(QStringLiteral("appController"),
-                                             &controller);
     QQmlComponent component(&engine);
     component.loadFromModule("IssueTrace", "Main");
     std::unique_ptr<QObject> rootObject(component.create(engine.rootContext()));

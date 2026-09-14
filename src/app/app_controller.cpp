@@ -1,7 +1,6 @@
 #include "app_controller.hpp"
 #include "form_template.hpp"
-#include "issuetrace/summary_renderer.hpp"
-#include "issuetrace/xlsx_exporter.hpp"
+#include "issue_export_service.hpp"
 
 #include <QDateTime>
 #include <QBuffer>
@@ -18,18 +17,14 @@
 #include <QJsonObject>
 #include <QMimeDatabase>
 #include <QProcess>
-#include <QHash>
 #include <QSet>
 #include <QSettings>
-#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUuid>
 
 #include <filesystem>
 #include <algorithm>
-#include <fstream>
-#include <sstream>
 #include <stdexcept>
 
 namespace {
@@ -55,52 +50,6 @@ std::string issueValue(const QVariantMap& values, const char* snakeCase,
     const auto key = QString::fromLatin1(snakeCase);
     if (values.contains(key)) return values.value(key).toString().toUtf8().toStdString();
     return legacyCamelCase ? toUtf8(values, legacyCamelCase) : std::string{};
-}
-
-QString timelineTypeLabel(const std::string& type) {
-    static const QHash<QString, QString> labels{
-        {QStringLiteral("note"), QStringLiteral("随笔")},
-        {QStringLiteral("progress"), QStringLiteral("进展")},
-        {QStringLiteral("data"), QStringLiteral("数据排查")},
-        {QStringLiteral("log"), QStringLiteral("日志")},
-        {QStringLiteral("code"), QStringLiteral("代码梳理")},
-        {QStringLiteral("solution"), QStringLiteral("解决方案")},
-        {QStringLiteral("verification"), QStringLiteral("验证")}};
-    const auto key = QString::fromUtf8(type.data(), static_cast<qsizetype>(type.size()));
-    return labels.value(key, key);
-}
-
-QString optionLabel(const QVariantMap& field, const std::string& value) {
-    const auto key = fromUtf8(value);
-    for (const auto& item : field.value(QStringLiteral("options")).toList()) {
-        const auto option = item.toMap();
-        if (option.value(QStringLiteral("value")).toString() == key) {
-            return option.value(QStringLiteral("label")).toString();
-        }
-    }
-    return key;
-}
-
-std::string templateOptionValue(const QVariantList& fields, const char* id,
-                                const std::string& raw) {
-    if (QString::fromLatin1(id) == QStringLiteral("status")) {
-        static const QHash<QString, QString> statusLabels{
-            {QStringLiteral("pending"), QStringLiteral("待处理")},
-            {QStringLiteral("investigating"), QStringLiteral("处理中")},
-            {QStringLiteral("waiting"), QStringLiteral("等待")},
-            {QStringLiteral("completed"), QStringLiteral("已完成")}};
-        const auto key = fromUtf8(raw);
-        if (statusLabels.contains(key)) {
-            return statusLabels.value(key).toUtf8().toStdString();
-        }
-    }
-    for (const auto& item : fields) {
-        const auto field = item.toMap();
-        if (field.value(QStringLiteral("id")).toString() == QString::fromLatin1(id)) {
-            return optionLabel(field, raw).toUtf8().toStdString();
-        }
-    }
-    return raw;
 }
 
 QString portablePackageRoot() {
@@ -132,44 +81,6 @@ bool localPathIsWithin(QString candidate, QString parent) {
 #endif
     return candidate == parent || candidate.startsWith(
         parent + QDir::separator());
-}
-
-issuetrace::XlsxCell xlsxCell(const QVariantMap& field,
-                            const issuetrace::StoredIssue& issue,
-                            const issuetrace::IssueStore& store) {
-    const auto id = field.value(QStringLiteral("id")).toString();
-    if (id == QStringLiteral("reported_at")) return {{}, issue.reportedAt};
-    if (id == QStringLiteral("resolved_at")) {
-        return issue.resolvedAt ? issuetrace::XlsxCell{{}, *issue.resolvedAt}
-                                : issuetrace::XlsxCell{};
-    }
-    if (id == QStringLiteral("title")) return {issue.title, {}};
-    if (id == QStringLiteral("original_problem")) return {issue.originalProblem, {}};
-    if (id == QStringLiteral("reporter")) return {issue.reporter, {}};
-    if (id == QStringLiteral("assignee")) return {issue.assignee, {}};
-    if (id == QStringLiteral("service")) return {issue.service, {}};
-    if (id == QStringLiteral("version")) return {issue.version, {}};
-    if (id == QStringLiteral("ticket")) return {issue.ticket, {}};
-    if (id == QStringLiteral("status")) {
-        return {optionLabel(field, issue.status).toUtf8().toStdString(), {}};
-    }
-    if (id == QStringLiteral("priority")) {
-        return {optionLabel(field, issue.priority).toUtf8().toStdString(), {}};
-    }
-    if (id == QStringLiteral("progress")) return {store.currentProgress(issue.id), {}};
-    if (id == QStringLiteral("conclusion")) return {issue.conclusion, {}};
-    return {};
-}
-
-std::string safeExportName(std::string value) {
-    for (auto& character : value) {
-        const auto byte = static_cast<unsigned char>(character);
-        if (byte < 32 || character == '/' || character == '\\' || character == ':' ||
-            character == '*' || character == '?' || character == '"' || character == '<' ||
-            character == '>' || character == '|') character = '_';
-    }
-    while (!value.empty() && (value.back() == ' ' || value.back() == '.')) value.pop_back();
-    return value.empty() ? std::string("IssueTrace-Export") : value;
 }
 
 }  // namespace
@@ -671,138 +582,29 @@ void AppController::filterIssues(const QString& text, const QString& status,
     setStatus(QStringLiteral("已找到 %1 个问题").arg(issues_.size()));
 }
 
-QString AppController::generateSummaryContent() {
-    if (!store_ || selectedIssue_.isEmpty()) {
-        throw std::runtime_error("请先选择一个问题");
-    }
-    const auto issueId = toUtf8(selectedIssue_, "id");
-    const auto issue = store_->findIssue(issueId);
-    if (!issue) throw std::runtime_error("问题不存在或已删除");
-
-    QFile templateFile(
-        QStringLiteral(":/issuetrace/resources/templates/summaries/default-summary.md"));
-    if (!templateFile.open(QIODevice::ReadOnly)) {
-        throw std::runtime_error("无法读取内置总结模板");
-    }
-    issuetrace::SummaryRenderContext context;
-    context.issueFields = {
-        {"ticket", issue->ticket},
-        {"status", templateOptionValue(activeTemplate_.fields, "status", issue->status)},
-        {"service", issue->service}, {"version", issue->version},
-        {"assignee", issue->assignee}, {"title", issue->title},
-        {"reporter", issue->reporter},
-        {"original_problem", issue->originalProblem},
-        {"conclusion", issue->conclusion}};
-    const auto formatTime = [](const std::int64_t value) {
-        return QDateTime::fromMSecsSinceEpoch(value)
-            .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
-            .toUtf8().toStdString();
-    };
-    context.issueFields["reported_at"] = formatTime(issue->reportedAt);
-    context.issueFields["resolved_at"] =
-        issue->resolvedAt ? formatTime(*issue->resolvedAt) : std::string{};
-    const auto generatedAt = QDateTime::currentMSecsSinceEpoch();
-    context.createdAt = formatTime(generatedAt);
-    context.updatedAt = formatTime(generatedAt);
-
-    const auto entries = store_->listTimelineEntries(issueId);
-    std::ostringstream timeline;
-    std::ostringstream attachments;
-    for (auto iterator = entries.rbegin(); iterator != entries.rend(); ++iterator) {
-        timeline << "### " << formatTime(iterator->occurredAt) << " · "
-                 << timelineTypeLabel(iterator->type).toUtf8().toStdString()
-                 << "\n\n" << iterator->contentMarkdown << "\n\n";
-        for (const auto& attachment : store_->listAttachments(iterator->id)) {
-            const auto filename = std::filesystem::path(attachment.relativePath)
-                                      .filename().generic_string();
-            const auto directory = attachment.mimeType.starts_with("image/")
-                                       ? std::string("图片") : std::string("附件");
-            attachments << "- [" << attachment.originalName << "](" << directory
-                        << "/" << filename << ")\n";
-        }
-    }
-    context.timelineMarkdown = timeline.str();
-    context.attachmentsMarkdown = attachments.str();
-    return fromUtf8(issuetrace::renderSummaryMarkdown(
-        templateFile.readAll().toStdString(), context));
-}
-
 void AppController::exportMarkdown(const QUrl& destination) {
-    std::filesystem::path temporary;
     try {
         if (!store_ || selectedIssue_.isEmpty() || !destination.isLocalFile()) {
             throw std::runtime_error("请选择导出目录和问题");
         }
-        const auto summary = generateSummaryContent();
         const auto issueId = toUtf8(selectedIssue_, "id");
         const auto issue = store_->findIssue(issueId);
         if (!issue) throw std::runtime_error("问题不存在或已删除");
-        const auto folderName = safeExportName(
-            (issue->ticket.empty() ? std::string{} : issue->ticket + "-") + issue->title);
-        const auto root = nativePath(destination.toLocalFile());
-        const auto target = root / folderName;
-        if (std::filesystem::exists(target)) {
-            throw std::runtime_error("导出目录已存在，请更换目录或先手动处理旧导出");
+        QFile templateFile(
+            QStringLiteral(":/issuetrace/resources/templates/summaries/default-summary.md"));
+        if (!templateFile.open(QIODevice::ReadOnly)) {
+            throw std::runtime_error("无法读取内置总结模板");
         }
-        temporary = root / (".issuetrace-export-" + issue->id + "-" +
-                            std::to_string(QDateTime::currentMSecsSinceEpoch()));
-        std::filesystem::create_directories(temporary / "图片");
-        std::filesystem::create_directories(temporary / "附件");
-
-        std::ostringstream record;
-        record << "# " << issue->title << "\n\n"
-               << "- 问题单：" << issue->ticket << "\n"
-               << "- 状态："
-               << templateOptionValue(activeTemplate_.fields, "status", issue->status)
-               << "\n"
-               << "- 服务：" << issue->service << "\n"
-               << "- 版本：" << issue->version << "\n"
-               << "- 提出人：" << issue->reporter << "\n"
-               << "- 处理人：" << issue->assignee << "\n\n"
-               << "## 问题原话\n\n" << issue->originalProblem << "\n\n"
-               << "## 处理记录\n\n";
-        const auto entries = store_->listTimelineEntries(issueId);
-        for (auto iterator = entries.rbegin(); iterator != entries.rend(); ++iterator) {
-            record << "### "
-                   << QDateTime::fromMSecsSinceEpoch(iterator->occurredAt)
-                          .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
-                          .toUtf8().toStdString()
-                   << " · " << timelineTypeLabel(iterator->type).toUtf8().toStdString()
-                   << "\n\n" << iterator->contentMarkdown << "\n\n";
-            for (const auto& attachment : store_->listAttachments(iterator->id)) {
-                const auto relative = std::filesystem::path(attachment.relativePath);
-                const auto category = attachment.mimeType.starts_with("image/")
-                                          ? std::filesystem::path("图片")
-                                          : std::filesystem::path("附件");
-                std::filesystem::copy_file(store_->workspaceRoot() / relative,
-                                           temporary / category / relative.filename());
-                const auto link = category.generic_string() + "/" +
-                                  relative.filename().generic_string();
-                if (attachment.mimeType.starts_with("image/")) {
-                    record << "![" << attachment.originalName << "](" << link << ")\n\n";
-                } else {
-                    record << "[" << attachment.originalName << "](" << link << ")\n\n";
-                }
-            }
-        }
-        const auto write = [](const std::filesystem::path& path,
-                              const std::string& content) {
-            std::ofstream output(path, std::ios::binary | std::ios::trunc);
-            output.write(content.data(), static_cast<std::streamsize>(content.size()));
-            if (!output) throw std::runtime_error("Markdown 文件写入失败");
-        };
-        write(temporary / "问题记录.md", record.str());
-        write(temporary / "问题总结.md", summary.toUtf8().toStdString());
-        std::filesystem::rename(temporary, target);
-        temporary.clear();
-        setStatus(QStringLiteral("Markdown 已导出：") +
-                  QDir::toNativeSeparators(destination.toLocalFile() +
-                                           QStringLiteral("/") + fromUtf8(folderName)));
+        const auto target = IssueExportService::exportMarkdown(
+            *store_, *issue, activeTemplate_, templateFile.readAll(),
+            nativePath(destination.toLocalFile()));
+#ifdef _WIN32
+        const auto display = QString::fromStdWString(target.wstring());
+#else
+        const auto display = QString::fromUtf8(target.string());
+#endif
+        setStatus(QStringLiteral("Markdown 已导出：") + QDir::toNativeSeparators(display));
     } catch (const std::exception& error) {
-        if (!temporary.empty()) {
-            std::error_code ignored;
-            std::filesystem::remove_all(temporary, ignored);
-        }
         setStatus(QStringLiteral("导出失败：") + QString::fromUtf8(error.what()));
     }
 }
@@ -812,48 +614,16 @@ void AppController::exportXlsx(const QUrl& destination) {
         if (!store_ || !destination.isLocalFile()) {
             throw std::runtime_error("请选择 XLSX 保存位置");
         }
-        auto path = destination.toLocalFile();
-        if (!path.endsWith(QStringLiteral(".xlsx"), Qt::CaseInsensitive)) {
-            path += QStringLiteral(".xlsx");
-        }
-        if (QFileInfo::exists(path)) {
-            throw std::runtime_error("目标文件已存在，请更换名称或先手动处理旧文件");
-        }
-
-        QVariantList exportFields;
-        issuetrace::XlsxTable table;
-        for (const auto& item : activeTemplate_.fields) {
-            const auto field = item.toMap();
-            if (!field.value(QStringLiteral("xlsxVisible")).toBool()) continue;
-            exportFields.push_back(field);
-            table.headers.push_back(
-                field.value(QStringLiteral("label")).toString().toUtf8().toStdString());
-        }
-        if (table.headers.empty()) {
-            throw std::runtime_error("当前表单模板没有启用任何 XLSX 导出列");
-        }
-
-        const auto issues = store_->searchIssues(activeQuery_);
-        for (const auto& issue : issues) {
-            std::vector<issuetrace::XlsxCell> row;
-            row.reserve(static_cast<std::size_t>(exportFields.size()));
-            for (const auto& item : exportFields) {
-                row.push_back(xlsxCell(item.toMap(), issue, *store_));
-            }
-            table.rows.push_back(std::move(row));
-        }
-        const auto bytes = issuetrace::buildXlsx(table);
-        QSaveFile output(path);
-        if (!output.open(QIODevice::WriteOnly) ||
-            output.write(reinterpret_cast<const char*>(bytes.data()),
-                         static_cast<qint64>(bytes.size())) !=
-                static_cast<qint64>(bytes.size()) ||
-            !output.commit()) {
-            throw std::runtime_error("XLSX 文件写入失败");
-        }
+        const auto result = IssueExportService::exportXlsx(
+            *store_, activeQuery_, activeTemplate_, nativePath(destination.toLocalFile()));
+#ifdef _WIN32
+        const auto display = QString::fromStdWString(result.path.wstring());
+#else
+        const auto display = QString::fromUtf8(result.path.string());
+#endif
         setStatus(QStringLiteral("已导出当前筛选结果（%1 项）：%2")
-                      .arg(issues.size())
-                      .arg(QDir::toNativeSeparators(path)));
+                      .arg(result.issueCount)
+                      .arg(QDir::toNativeSeparators(display)));
     } catch (const std::exception& error) {
         setStatus(QStringLiteral("导出失败：") + QString::fromUtf8(error.what()));
     }

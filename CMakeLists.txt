@@ -161,6 +161,8 @@ if(ISSUETRACE_BUILD_DESKTOP)
         src/app/app_controller.hpp
         src/app/form_template.cpp
         src/app/form_template.hpp
+        src/app/issue_export_service.cpp
+        src/app/issue_export_service.hpp
         src/app/main.cpp
     )
     if(APPLE)
@@ -200,7 +202,12 @@ if(ISSUETRACE_BUILD_DESKTOP)
         URI IssueTrace
         VERSION 1.0
         OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml/IssueTrace"
-        QML_FILES qml/Main.qml
+        QML_FILES
+            qml/Main.qml
+            qml/IssueDetailsDialog.qml
+            qml/IssueInbox.qml
+            qml/TimelineComposer.qml
+            qml/TimelineList.qml
     )
     qt_add_resources(IssueTrace issuetrace_resources
         PREFIX "/issuetrace"
@@ -230,6 +237,23 @@ if(ISSUETRACE_BUILD_DESKTOP)
     target_link_libraries(issuetrace_form_template_tests PRIVATE Qt6::Core)
     issuetrace_enable_test_assertions(issuetrace_form_template_tests)
     add_test(NAME issuetrace_form_template_tests COMMAND issuetrace_form_template_tests)
+    add_executable(issuetrace_issue_export_service_tests
+        tests/issue_export_service_tests.cpp
+        src/app/form_template.cpp
+        src/app/issue_export_service.cpp
+    )
+    target_include_directories(issuetrace_issue_export_service_tests PRIVATE src/app)
+    target_compile_definitions(issuetrace_issue_export_service_tests PRIVATE
+        ISSUETRACE_DEFAULT_FORM_PATH="${CMAKE_CURRENT_SOURCE_DIR}/resources/templates/forms/default-issue.json"
+        ISSUETRACE_DEFAULT_SUMMARY_PATH="${CMAKE_CURRENT_SOURCE_DIR}/resources/templates/summaries/default-summary.md"
+    )
+    target_link_libraries(issuetrace_issue_export_service_tests PRIVATE
+        issuetrace_core
+        Qt6::Core
+    )
+    issuetrace_enable_test_assertions(issuetrace_issue_export_service_tests)
+    add_test(NAME issuetrace_issue_export_service_tests
+        COMMAND issuetrace_issue_export_service_tests)
     if(NOT CMAKE_CROSSCOMPILING)
         add_test(NAME issuetrace_ui_scroll_smoke
             COMMAND "${CMAKE_COMMAND}" -E env

@@ -46,7 +46,7 @@
 | macOS arm64 原生 Release、滚动和升级回滚烟测 | 已通过 |
 | macOS Developer ID 签名与公证 | 未完成 |
 | Windows x86_64 交叉构建与 PE 依赖闭包 | 已通过，仅开发包 |
-| Windows 11 原生构建和 GUI 验收 | 未完成 |
+| Windows 11 原生构建和 GUI 验收 | 原生自动化脚本已就绪；尚未在 Windows 11 执行和完成人工验收 |
 | Linux X11/Wayland 便携包和验收 | 未完成 |
 | Debug、Release、ASan/UBSan 核心测试 | 已通过 |
 | 发布归档清单、SBOM、SHA-256 | 已生成并验证 |

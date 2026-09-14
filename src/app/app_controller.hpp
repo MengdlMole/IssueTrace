@@ -97,7 +97,6 @@ private:
     void setSelected(const issuetrace::StoredIssue& issue);
     void refreshTimeline();
     void refreshAttention();
-    QString generateSummaryContent();
     QVariantMap toVariantMap(const issuetrace::StoredIssue& issue) const;
 
     std::unique_ptr<issuetrace::IssueStore> store_;
