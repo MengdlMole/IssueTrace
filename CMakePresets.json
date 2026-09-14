@@ -1,0 +1,59 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "core-debug",
+      "displayName": "Core only (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/core-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ISSUETRACE_BUILD_DESKTOP": "OFF"
+      }
+    },
+    {
+      "name": "macos-homebrew-debug",
+      "displayName": "macOS Qt Community via Homebrew (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/macos-homebrew-debug",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew",
+        "ISSUETRACE_BUILD_DESKTOP": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "core-debug",
+      "configurePreset": "core-debug"
+    },
+    {
+      "name": "macos-homebrew-debug",
+      "configurePreset": "macos-homebrew-debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "core-debug",
+      "configurePreset": "core-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "macos-homebrew-debug",
+      "configurePreset": "macos-homebrew-debug",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}
+

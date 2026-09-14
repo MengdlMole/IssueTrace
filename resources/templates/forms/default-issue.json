@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "id": "default-issue",
+  "version": 1,
+  "name": "默认问题表单",
+  "fields": [
+    {
+      "id": "title",
+      "label": "问题",
+      "type": "multiline_text",
+      "required": true,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "original_problem",
+      "label": "问题原话",
+      "type": "multiline_text",
+      "required": false,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "reporter",
+      "label": "问题提出人",
+      "type": "person",
+      "required": false,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "reported_at",
+      "label": "提出时间",
+      "type": "datetime",
+      "required": true,
+      "default": "now",
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "assignee",
+      "label": "处理人",
+      "type": "person",
+      "required": false,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "service",
+      "label": "服务",
+      "type": "text",
+      "required": false,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "version",
+      "label": "问题版本",
+      "type": "text",
+      "required": false,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "ticket",
+      "label": "问题单",
+      "type": "text",
+      "required": false,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "status",
+      "label": "问题状态",
+      "type": "select",
+      "required": true,
+      "default": "pending",
+      "options": [
+        {"value": "pending", "label": "待处理"},
+        {"value": "investigating", "label": "处理中"},
+        {"value": "waiting", "label": "等待"},
+        {"value": "completed", "label": "已完成"}
+      ],
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "priority",
+      "label": "优先级",
+      "type": "select",
+      "required": false,
+      "default": "normal",
+      "options": [
+        {"value": "urgent", "label": "紧急"},
+        {"value": "high", "label": "高"},
+        {"value": "normal", "label": "普通"},
+        {"value": "low", "label": "低"}
+      ],
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "progress",
+      "label": "问题进展",
+      "type": "timeline_summary",
+      "required": false,
+      "readOnly": true,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "conclusion",
+      "label": "问题结论",
+      "type": "multiline_text",
+      "required": false,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "resolved_at",
+      "label": "解决时间",
+      "type": "datetime",
+      "required": false,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    }
+  ]
+}

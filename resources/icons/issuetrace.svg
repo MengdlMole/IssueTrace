@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">IssueTrace application icon</title>
+  <desc id="description">A blue rounded square containing a white issue trail.</desc>
+  <defs>
+    <linearGradient id="background" x1="160" y1="128" x2="864" y2="896" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#0f766e"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="url(#background)"/>
+  <path d="M296 338h432M296 512h336M296 686h224" fill="none" stroke="#fff" stroke-width="88" stroke-linecap="round"/>
+  <circle cx="752" cy="686" r="52" fill="#fbbf24" stroke="#fff" stroke-width="24"/>
+</svg>

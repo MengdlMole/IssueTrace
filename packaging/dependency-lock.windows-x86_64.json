@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-29",
+  "platform": "windows-x86_64",
+  "artifact_kind": "portable-zip-development",
+  "components": [
+    {
+      "name": "SQLite",
+      "version": "3.53.4",
+      "license": "Public-Domain",
+      "source": "https://www.sqlite.org/2026/sqlite-amalgamation-3530400.zip",
+      "source_sha3_256": "628a44cfe82c66aed1ccbbe85a562d2e33ebe64b3288981ed76285612227934e"
+    },
+    {
+      "name": "zlib",
+      "version": "1.3.2",
+      "license": "Zlib",
+      "source": "https://github.com/madler/zlib.git",
+      "source_tag": "v1.3.2"
+    },
+    {
+      "name": "libxlsxwriter",
+      "version": "1.2.4",
+      "license": "BSD-2-Clause AND BSD-3-Clause AND Zlib AND MPL-2.0",
+      "source": "https://github.com/jmcnamara/libxlsxwriter.git",
+      "source_commit": "2894634d65cee6021901a165bfc2bb0fad6da193"
+    },
+    {
+      "name": "Qt Base",
+      "version": "6.11.1",
+      "license": "LGPL-3.0-only OR GPL-3.0-only",
+      "source": "https://download.qt.io/official_releases/qt/6.11/6.11.1/submodules/qtbase-everywhere-src-6.11.1.tar.xz",
+      "binary_url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt.qt6.6111.win64_mingw/6.11.1-0-202608181346qtbase-Windows-Windows_11_24H2-Mingw-w64-Mingw-w64-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+      "binary_sha1": "60f5e56c9baa52941145b25e3ff40d017b08595b"
+    },
+    {
+      "name": "Qt Declarative",
+      "version": "6.11.1",
+      "license": "LGPL-3.0-only OR GPL-3.0-only",
+      "source": "https://download.qt.io/official_releases/qt/6.11/6.11.1/submodules/qtdeclarative-everywhere-src-6.11.1.tar.xz",
+      "binary_sha1": "d1c7b27b0a64320aac87c2a51346394e49004e5a"
+    },
+    {
+      "name": "Qt SVG",
+      "version": "6.11.1",
+      "license": "LGPL-3.0-only OR GPL-3.0-only",
+      "source": "https://download.qt.io/official_releases/qt/6.11/6.11.1/submodules/qtsvg-everywhere-src-6.11.1.tar.xz",
+      "binary_sha1": "b9bd417522b2a83d69f5db22fe8953fc515dc1d8"
+    },
+    {
+      "name": "Qt Shader Tools",
+      "version": "6.11.1",
+      "license": "LGPL-3.0-only OR GPL-3.0-only",
+      "source": "https://download.qt.io/official_releases/qt/6.11/6.11.1/submodules/qtshadertools-everywhere-src-6.11.1.tar.xz",
+      "binary_sha1": "a9070aedea57ed159b2d42357b94bdfa54e2690f"
+    },
+    {
+      "name": "MinGW-w64 toolchain",
+      "version": "14.0.0 / GCC 16.2.0",
+      "license": "ZPL-2.1 AND GPL-3.0-or-later WITH GCC-exception-3.1"
+    }
+  ],
+  "excluded": [
+    "Qt WebEngine",
+    "Qt Quick 3D",
+    "proprietary D3D compiler binaries",
+    "proprietary Mesa binaries"
+  ]
+}

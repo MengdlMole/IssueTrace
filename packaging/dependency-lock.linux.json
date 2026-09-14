@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "platform": "linux-native",
+  "components": [
+    {"name": "SQLite", "version": "3.53.4 or compatible system library", "license": "Public-Domain", "source": "https://www.sqlite.org/2026/sqlite-amalgamation-3530400.zip"},
+    {"name": "zlib", "version": "1.3.2 or compatible system library", "license": "Zlib", "source": "https://github.com/madler/zlib.git"},
+    {"name": "libxlsxwriter", "version": "1.2.4", "license": "BSD-2-Clause AND BSD-3-Clause AND Zlib AND MPL-2.0", "source": "https://github.com/jmcnamara/libxlsxwriter.git"},
+    {"name": "Qt Base and Qt Declarative", "version": "6.11.x", "license": "LGPL-3.0-only OR GPL-3.0-only", "source": "https://code.qt.io/qt/qt5.git"},
+    {"name": "GCC runtime", "version": "native build", "license": "GPL-3.0-or-later WITH GCC-exception-3.1"}
+  ]
+}
