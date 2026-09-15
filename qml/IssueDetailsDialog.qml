@@ -40,7 +40,7 @@ Dialog {
     onOpened: reload()
 
     Shortcut {
-        sequence: StandardKey.Cancel
+        sequences: [StandardKey.Cancel]
         enabled: root.opened
         onActivated: if (root.flush()) root.close()
     }

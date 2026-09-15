@@ -20,6 +20,7 @@
 #include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTimeZone>
 #include <QTimer>
 #include <QUuid>
 
@@ -70,6 +71,14 @@ QString elapsedText(const std::int64_t since, const std::int64_t now) {
     const auto hours = minutes / 60;
     if (hours < 24) return QStringLiteral("%1 小时 %2 分钟").arg(hours).arg(minutes % 60);
     return QStringLiteral("%1 天 %2 小时").arg(hours / 24).arg(hours % 24);
+}
+
+QString statusDisplayName(const QString& status) {
+    if (status == QStringLiteral("pending")) return QStringLiteral("待处理");
+    if (status == QStringLiteral("investigating")) return QStringLiteral("处理中");
+    if (status == QStringLiteral("waiting")) return QStringLiteral("等待");
+    if (status == QStringLiteral("completed")) return QStringLiteral("完成");
+    return status;
 }
 
 bool localPathIsWithin(QString candidate, QString parent) {
@@ -465,10 +474,48 @@ void AppController::refreshAttention() {
 }
 
 bool AppController::setSelectedIssueStatus(const QString& status) {
-    if (selectedIssue_.isEmpty()) return false;
-    auto values = selectedIssue_;
-    values.insert(QStringLiteral("status"), status);
-    return saveIssue(values);
+    try {
+        if (!store_ || selectedIssue_.isEmpty()) {
+            throw std::runtime_error("请先选择一个问题");
+        }
+        static const QSet<QString> allowedStatuses{
+            QStringLiteral("pending"), QStringLiteral("investigating"),
+            QStringLiteral("waiting"), QStringLiteral("completed")};
+        if (!allowedStatuses.contains(status)) {
+            throw std::runtime_error("问题状态无效");
+        }
+
+        const auto id = toUtf8(selectedIssue_, "id");
+        auto issue = store_->findIssue(id);
+        if (!issue) throw std::runtime_error("问题不存在或已删除");
+        const auto nextStatus = status.toUtf8().toStdString();
+        if (issue->status != nextStatus) {
+            const auto wasCompleted = issue->status == "completed";
+            issue->status = nextStatus;
+            issue->statusChangedAt = QDateTime::currentMSecsSinceEpoch();
+            if (issue->status == "completed") {
+                if (!wasCompleted && !issue->resolvedAt) {
+                    issue->resolvedAt = issue->statusChangedAt;
+                }
+                issue->remindAt.reset();
+            }
+            store_->updateIssue(*issue);
+        }
+
+        const auto saved = store_->findIssue(id);
+        if (!saved) throw std::runtime_error("状态保存后无法重新读取问题");
+        setSelected(*saved);
+        refreshIssues();
+        setStatus(QStringLiteral("问题状态已更新为：") + statusDisplayName(status));
+        return true;
+    } catch (const std::exception& error) {
+        setStatus(QStringLiteral("状态更新失败：") + QString::fromUtf8(error.what()));
+        // A checkable QML button changes its local state before invoking this
+        // method. Re-notify the unchanged projection so a failed write rolls
+        // the button group back to the persisted status immediately.
+        emit selectedIssueChanged();
+        return false;
+    }
 }
 
 bool AppController::remindSelectedIssueIn(const int minutes) {
@@ -483,11 +530,48 @@ bool AppController::remindSelectedIssueIn(const int minutes) {
                               static_cast<qint64>(minutes) * 60000;
         store_->setIssueReminder(id, remindAt);
         notifiedReminders_.clear();
+        const auto saved = store_->findIssue(id);
+        if (!saved) throw std::runtime_error("提醒保存后无法重新读取问题");
+        setSelected(*saved);
         refreshIssues();
-        setSelected(*store_->findIssue(id));
         setStatus(QStringLiteral("提醒已设置：%1")
                       .arg(QDateTime::fromMSecsSinceEpoch(remindAt)
                                .toString(QStringLiteral("yyyy-MM-dd HH:mm"))));
+        return true;
+    } catch (const std::exception& error) {
+        setStatus(QStringLiteral("设置提醒失败：") + QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool AppController::remindSelectedIssueAt(const QString& localDateTime) {
+    try {
+        if (!store_ || selectedIssue_.isEmpty()) {
+            throw std::runtime_error("请先选择一个问题");
+        }
+        const auto value = localDateTime.trimmed();
+        const auto format = QStringLiteral("yyyy-MM-dd HH:mm");
+        const auto parsed = QDateTime::fromString(value, format);
+        if (!parsed.isValid() || parsed.toString(format) != value) {
+            throw std::runtime_error("请输入 yyyy-MM-dd HH:mm 格式的时间");
+        }
+        const QDateTime target(parsed.date(), parsed.time(),
+                               QTimeZone::systemTimeZone());
+        if (!target.isValid()) throw std::runtime_error("该本地时间不存在");
+        const auto remindAt = target.toMSecsSinceEpoch();
+        if (remindAt <= QDateTime::currentMSecsSinceEpoch()) {
+            throw std::runtime_error("提醒时间必须晚于当前时间");
+        }
+
+        const auto id = toUtf8(selectedIssue_, "id");
+        if (!store_->findIssue(id)) throw std::runtime_error("问题不存在");
+        store_->setIssueReminder(id, remindAt);
+        notifiedReminders_.clear();
+        const auto saved = store_->findIssue(id);
+        if (!saved) throw std::runtime_error("提醒保存后无法重新读取问题");
+        setSelected(*saved);
+        refreshIssues();
+        setStatus(QStringLiteral("提醒已设置：%1").arg(target.toString(format)));
         return true;
     } catch (const std::exception& error) {
         setStatus(QStringLiteral("设置提醒失败：") + QString::fromUtf8(error.what()));
@@ -503,8 +587,10 @@ bool AppController::clearSelectedIssueReminder() {
         if (!issue) throw std::runtime_error("问题不存在");
         store_->setIssueReminder(id, std::nullopt);
         notifiedReminders_.clear();
+        const auto saved = store_->findIssue(id);
+        if (!saved) throw std::runtime_error("提醒取消后无法重新读取问题");
+        setSelected(*saved);
         refreshIssues();
-        setSelected(*store_->findIssue(id));
         setStatus(QStringLiteral("提醒已取消"));
         return true;
     } catch (const std::exception& error) {

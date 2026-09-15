@@ -47,6 +47,12 @@ ApplicationWindow {
         quickCreate.close()
         timelineComposer.forceInputFocus()
     }
+    function openCustomReminder() {
+        customReminderValue.text = Qt.formatDateTime(
+            new Date(Date.now() + 2 * 60 * 60 * 1000), "yyyy-MM-dd HH:mm")
+        customReminderError.text = ""
+        customReminderDialog.open()
+    }
 
     onClosing: function(close) {
         if (!issueDetails.flush()) {
@@ -128,24 +134,41 @@ ApplicationWindow {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    ButtonGroup { id: statusButtonGroup; exclusive: true }
                     Button {
+                        objectName: "statusPendingButton"
                         text: "待处理"
-                        highlighted: App.selectedIssue.status === "pending"
+                        checkable: true
+                        checked: App.selectedIssueStatus === "pending"
+                        highlighted: checked
+                        ButtonGroup.group: statusButtonGroup
                         onClicked: root.markStatus("pending")
                     }
                     Button {
+                        objectName: "statusInvestigatingButton"
                         text: "开始处理"
-                        highlighted: App.selectedIssue.status === "investigating"
+                        checkable: true
+                        checked: App.selectedIssueStatus === "investigating"
+                        highlighted: checked
+                        ButtonGroup.group: statusButtonGroup
                         onClicked: root.markStatus("investigating")
                     }
                     Button {
+                        objectName: "statusWaitingButton"
                         text: "等待"
-                        highlighted: App.selectedIssue.status === "waiting"
+                        checkable: true
+                        checked: App.selectedIssueStatus === "waiting"
+                        highlighted: checked
+                        ButtonGroup.group: statusButtonGroup
                         onClicked: root.markStatus("waiting")
                     }
                     Button {
+                        objectName: "statusCompletedButton"
                         text: "完成"
-                        highlighted: App.selectedIssue.status === "completed"
+                        checkable: true
+                        checked: App.selectedIssueStatus === "completed"
+                        highlighted: checked
+                        ButtonGroup.group: statusButtonGroup
                         onClicked: root.markStatus("completed")
                     }
                     Item { Layout.fillWidth: true }
@@ -260,12 +283,63 @@ ApplicationWindow {
         MenuItem { text: "30 分钟后"; onTriggered: App.remindSelectedIssueIn(30) }
         MenuItem { text: "2 小时后"; onTriggered: App.remindSelectedIssueIn(120) }
         MenuItem { text: "明天此时"; onTriggered: App.remindSelectedIssueIn(1440) }
+        MenuItem { text: "自定义时间…"; onTriggered: root.openCustomReminder() }
         MenuSeparator {}
         MenuItem {
             text: "取消提醒"
             enabled: (App.selectedIssue.remindAt || "").length > 0
             onTriggered: App.clearSelectedIssueReminder()
         }
+    }
+    Dialog {
+        id: customReminderDialog
+        title: "自定义提醒时间"
+        modal: true
+        anchors.centerIn: parent
+        width: 430
+
+        ColumnLayout {
+            anchors.fill: parent
+            Label { text: "提醒时间（本机时区）"; font.bold: true }
+            TextField {
+                id: customReminderValue
+                Layout.fillWidth: true
+                placeholderText: "yyyy-MM-dd HH:mm"
+                selectByMouse: true
+                onAccepted: customReminderSave.clicked()
+            }
+            Label {
+                text: "示例：2026-09-16 14:30"
+                color: palette.mid
+                font.pixelSize: 12
+            }
+            Label {
+                id: customReminderError
+                Layout.fillWidth: true
+                visible: text.length > 0
+                color: "#b42318"
+                wrapMode: Text.Wrap
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button { text: "取消"; onClicked: customReminderDialog.close() }
+                Button {
+                    id: customReminderSave
+                    text: "设置提醒"
+                    highlighted: true
+                    onClicked: {
+                        if (App.remindSelectedIssueAt(customReminderValue.text)) {
+                            customReminderDialog.close()
+                        } else {
+                            customReminderError.text = App.status
+                            customReminderValue.forceActiveFocus()
+                        }
+                    }
+                }
+            }
+        }
+        onOpened: customReminderValue.forceActiveFocus()
     }
     Menu {
         id: toolsMenu

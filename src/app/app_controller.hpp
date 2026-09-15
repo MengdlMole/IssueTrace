@@ -17,6 +17,7 @@ class AppController final : public QObject {
     Q_PROPERTY(QVariantList issues READ issues NOTIFY issuesChanged)
     Q_PROPERTY(QVariantList attentionIssues READ attentionIssues NOTIFY attentionChanged)
     Q_PROPERTY(QVariantMap selectedIssue READ selectedIssue NOTIFY selectedIssueChanged)
+    Q_PROPERTY(QString selectedIssueStatus READ selectedIssueStatus NOTIFY selectedIssueChanged)
     Q_PROPERTY(QVariantList timeline READ timeline NOTIFY timelineChanged)
     Q_PROPERTY(QVariantList formFields READ formFields NOTIFY formFieldsChanged)
     Q_PROPERTY(QString workspacePath READ workspacePath NOTIFY workspacePathChanged)
@@ -29,6 +30,9 @@ public:
     [[nodiscard]] QVariantList issues() const { return issues_; }
     [[nodiscard]] QVariantList attentionIssues() const { return attentionIssues_; }
     [[nodiscard]] QVariantMap selectedIssue() const { return selectedIssue_; }
+    [[nodiscard]] QString selectedIssueStatus() const {
+        return selectedIssue_.value(QStringLiteral("status")).toString();
+    }
     [[nodiscard]] QVariantList timeline() const { return timeline_; }
     [[nodiscard]] QVariantList formFields() const { return formFields_; }
     [[nodiscard]] QString workspacePath() const { return workspacePath_; }
@@ -57,6 +61,7 @@ public:
     Q_INVOKABLE void refreshIssues();
     Q_INVOKABLE bool setSelectedIssueStatus(const QString& status);
     Q_INVOKABLE bool remindSelectedIssueIn(int minutes);
+    Q_INVOKABLE bool remindSelectedIssueAt(const QString& localDateTime);
     Q_INVOKABLE bool clearSelectedIssueReminder();
     Q_INVOKABLE void checkReminders();
     Q_INVOKABLE bool clipboardHasImage() const;

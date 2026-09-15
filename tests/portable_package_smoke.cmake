@@ -51,4 +51,22 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -E env
 if(NOT scroll_result EQUAL 0)
     message(FATAL_ERROR "Packaged scroll layout check returned ${scroll_result}")
 endif()
+execute_process(COMMAND "${CMAKE_COMMAND}" -E env
+    QT_QPA_PLATFORM=offscreen
+    ISSUETRACE_WORKSPACE=${TEST_ROOT}/status-workspace
+    "${install_root}/IssueTrace.app/Contents/MacOS/IssueTrace"
+    --verify-status-refresh
+    RESULT_VARIABLE status_result)
+if(NOT status_result EQUAL 0)
+    message(FATAL_ERROR "Packaged status refresh check returned ${status_result}")
+endif()
+execute_process(COMMAND "${CMAKE_COMMAND}" -E env
+    QT_QPA_PLATFORM=offscreen
+    ISSUETRACE_WORKSPACE=${TEST_ROOT}/custom-reminder-workspace
+    "${install_root}/IssueTrace.app/Contents/MacOS/IssueTrace"
+    --verify-custom-reminder
+    RESULT_VARIABLE reminder_result)
+if(NOT reminder_result EQUAL 0)
+    message(FATAL_ERROR "Packaged custom reminder check returned ${reminder_result}")
+endif()
 file(REMOVE_RECURSE "${TEST_ROOT}")

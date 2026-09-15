@@ -4,9 +4,17 @@ import QtQuick.Layouts
 
 Pane {
     id: root
+    objectName: "issueInbox"
     required property var controller
     property string selectedIssueId: ""
     required property var statusOptions
+    readonly property string selectedIssueStatusText: {
+        for (let i = 0; i < controller.issues.length; ++i) {
+            const issue = controller.issues[i]
+            if (issue.id === selectedIssueId) return statusLabel(issue.status)
+        }
+        return ""
+    }
     signal issueRequested(string issueId)
     signal filterRequested(string text, string status)
 

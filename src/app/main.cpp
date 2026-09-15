@@ -1,6 +1,7 @@
 #include "app_controller.hpp"
 
 #include <QApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
 #include <QQmlApplicationEngine>
@@ -118,6 +119,74 @@ int main(int argc, char* argv[]) {
             }
             app.exit(0);
         });
+    }
+    if (arguments.contains(QStringLiteral("--verify-status-refresh"))) {
+        controller.createQuickIssue(QStringLiteral("状态刷新验证"), QString{});
+        QTimer::singleShot(100, &app, [&app, window, &controller] {
+            auto* investigating = window->findChild<QObject*>(
+                QStringLiteral("statusInvestigatingButton"));
+            const auto invoked = investigating &&
+                QMetaObject::invokeMethod(investigating, "clicked");
+            QTimer::singleShot(150, &app, [&app, window, &controller, invoked] {
+                auto* pending = window->findChild<QObject*>(
+                    QStringLiteral("statusPendingButton"));
+                auto* active = window->findChild<QObject*>(
+                    QStringLiteral("statusInvestigatingButton"));
+                auto* inbox = window->findChild<QObject*>(QStringLiteral("issueInbox"));
+                const auto selectedStatus = controller.selectedIssueStatus();
+                QString listedStatus;
+                const auto selectedId = controller.selectedIssue()
+                                            .value(QStringLiteral("id")).toString();
+                for (const auto& item : controller.issues()) {
+                    const auto issue = item.toMap();
+                    if (issue.value(QStringLiteral("id")).toString() == selectedId) {
+                        listedStatus = issue.value(QStringLiteral("status")).toString();
+                        break;
+                    }
+                }
+                if (!invoked || !pending || !active || !inbox ||
+                    pending->property("highlighted").toBool() ||
+                    !active->property("highlighted").toBool() ||
+                    inbox->property("selectedIssueStatusText").toString() !=
+                        QStringLiteral("处理中") ||
+                    selectedStatus != QStringLiteral("investigating") ||
+                    listedStatus != QStringLiteral("investigating")) {
+                    QTextStream(stderr)
+                        << "IssueTrace status refresh check failed: invoked=" << invoked
+                        << ", selected=" << selectedStatus
+                        << ", listed=" << listedStatus
+                        << ", pending="
+                        << (pending ? pending->property("highlighted").toBool() : false)
+                        << ", investigating="
+                        << (active ? active->property("highlighted").toBool() : false)
+                        << ", inbox="
+                        << (inbox ? inbox->property("selectedIssueStatusText").toString()
+                                  : QString{})
+                        << '\n';
+                    app.exit(4);
+                    return;
+                }
+                app.exit(0);
+            });
+        });
+    }
+    if (arguments.contains(QStringLiteral("--verify-custom-reminder"))) {
+        controller.createQuickIssue(QStringLiteral("自定义提醒验证"), QString{});
+        const auto reminder = QDateTime::currentDateTime().addDays(2)
+                                  .toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+        const auto saved = controller.remindSelectedIssueAt(reminder);
+        const auto projected = controller.selectedIssue()
+                                   .value(QStringLiteral("remindAt")).toString();
+        const auto invalidAccepted = controller.remindSelectedIssueAt(
+            QStringLiteral("不是时间"));
+        if (!saved || invalidAccepted || projected != reminder) {
+            QTextStream(stderr)
+                << "IssueTrace custom reminder check failed: saved=" << saved
+                << ", invalidAccepted=" << invalidAccepted
+                << ", expected=" << reminder << ", projected=" << projected << '\n';
+            return 5;
+        }
+        QTimer::singleShot(0, &app, &QCoreApplication::quit);
     }
     const auto markerOption = arguments.indexOf(QStringLiteral("--update-health-marker"));
     if (markerOption >= 0 && markerOption + 1 < arguments.size()) {

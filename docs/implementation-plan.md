@@ -9,7 +9,7 @@
 - [x] 四状态模型，以及旧 `verifying/resolved/closed` 状态迁移。
 - [x] 持久化状态变更时间和显式提醒时间。
 - [x] 问题年龄、状态停留、未活动和“需要关注”投影。
-- [x] 30 分钟、2 小时、明天此时提醒，桌面通知和系统托盘。
+- [x] 30 分钟、2 小时、明天此时和自定义未来时间提醒，桌面通知和系统托盘。
 - [x] 快捷提交、按问题保存草稿、粘贴截图、拖放和批量附件。
 - [x] Markdown 自包含导出、当前筛选 XLSX 导出。
 - [x] Markdown/XLSX 导出从 UI 控制器拆分为可独立测试的应用服务。
@@ -25,6 +25,8 @@
 - `issuetrace_update_package_tests`：清单、哈希、版本和归档边界；
 - `issuetrace_updater_integration`：升级成功与失败回滚；
 - `issuetrace_ui_scroll_smoke`：创建长时间线并验证视口可滚动；
+- `issuetrace_ui_status_refresh_smoke`：点击状态按钮并验证详情按钮、当前问题和左侧投影即时一致；
+- `issuetrace_custom_reminder_smoke`：验证自定义未来时间保存和非法时间拒绝；
 - sanitizer 核心测试；
 - macOS 原生便携包烟测和 Windows 交叉构建依赖闭包。
 - 应用图标、macOS bundle 元数据与 Windows 文件版本资源。

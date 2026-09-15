@@ -70,6 +70,10 @@ try {
 
         $env:ISSUETRACE_WORKSPACE = Join-Path $TestRoot "scroll-workspace"
         Invoke-Checked (Join-Path $installRoot "IssueTrace.exe") --verify-scroll-layout
+        $env:ISSUETRACE_WORKSPACE = Join-Path $TestRoot "status-workspace"
+        Invoke-Checked (Join-Path $installRoot "IssueTrace.exe") --verify-status-refresh
+        $env:ISSUETRACE_WORKSPACE = Join-Path $TestRoot "custom-reminder-workspace"
+        Invoke-Checked (Join-Path $installRoot "IssueTrace.exe") --verify-custom-reminder
     } finally {
         $env:ISSUETRACE_EXIT_AFTER_HEALTH = $oldExitAfterHealth
         $env:ISSUETRACE_WORKSPACE = $oldWorkspace

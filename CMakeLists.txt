@@ -262,6 +262,20 @@ if(ISSUETRACE_BUILD_DESKTOP)
                 $<TARGET_FILE:IssueTrace> --verify-scroll-layout
         )
         set_tests_properties(issuetrace_ui_scroll_smoke PROPERTIES TIMEOUT 15)
+        add_test(NAME issuetrace_ui_status_refresh_smoke
+            COMMAND "${CMAKE_COMMAND}" -E env
+                QT_QPA_PLATFORM=offscreen
+                ISSUETRACE_WORKSPACE=${CMAKE_CURRENT_BINARY_DIR}/ui-status-workspace
+                $<TARGET_FILE:IssueTrace> --verify-status-refresh
+        )
+        set_tests_properties(issuetrace_ui_status_refresh_smoke PROPERTIES TIMEOUT 15)
+        add_test(NAME issuetrace_custom_reminder_smoke
+            COMMAND "${CMAKE_COMMAND}" -E env
+                QT_QPA_PLATFORM=offscreen
+                ISSUETRACE_WORKSPACE=${CMAKE_CURRENT_BINARY_DIR}/custom-reminder-workspace
+                $<TARGET_FILE:IssueTrace> --verify-custom-reminder
+        )
+        set_tests_properties(issuetrace_custom_reminder_smoke PROPERTIES TIMEOUT 15)
     endif()
     if(WIN32)
         set(issuetrace_runtime_destination ".")
