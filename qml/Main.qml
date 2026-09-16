@@ -10,9 +10,11 @@ ApplicationWindow {
     minimumWidth: 900
     minimumHeight: 600
     visible: true
-    title: "IssueTrace · 事件管理"
+    title: "IssueTrace · " + (currentPage === 0 ? "事件管理"
+                               : currentPage === 1 ? "事件记录" : "事件日历")
     property double clockNow: Date.now()
     property int currentPage: 0
+    property var quickDraft: ({priority: "normal"})
 
     property url pendingRestoreFolder: ""
     property url pendingUpdateArchive: ""
@@ -54,12 +56,25 @@ ApplicationWindow {
         timelineComposer.saveDraft()
         currentPage = 0
     }
+    function showCalendar() {
+        if (!issueDetails.flush()) return
+        timelineComposer.saveDraft()
+        currentPage = 2
+    }
     function markStatus(status) {
         if (!issueDetails.flush()) return
         App.setSelectedIssueStatus(status)
     }
     function createIssue(startNow) {
-        if (!App.createQuickIssue(quickTitle.text, quickReporter.text)) return
+        if (!App.createQuickIssue(quickDraft.title || "", quickDraft.reporter || "",
+                                  quickDraft.assignee || "",
+                                  quickDraft.group_name || "",
+                                  quickDraft.tags || "",
+                                  quickDraft.version || "",
+                                  quickDraft.service || "",
+                                  quickDraft.priority || "normal",
+                                  quickDraft.original_problem || "",
+                                  quickDraft.ticket || "")) return
         if (startNow) App.setSelectedIssueStatus("investigating")
         quickCreate.close()
         currentPage = 1
@@ -111,7 +126,7 @@ ApplicationWindow {
                 id: navigationTabs
                 objectName: "mainNavigationTabs"
                 property int currentIndex: root.currentPage
-                Layout.preferredWidth: 230
+                Layout.preferredWidth: 330
                 Layout.preferredHeight: 38
                 color: root.palette.midlight
                 radius: 7
@@ -162,6 +177,27 @@ ApplicationWindow {
                         enabled: recordTab.enabled
                         cursorShape: Qt.PointingHandCursor
                         onClicked: recordTab.activate()
+                    }
+                }
+                Rectangle {
+                    id: calendarTab
+                    objectName: "calendarTab"
+                    property bool checked: root.currentPage === 2
+                    function activate() { root.showCalendar() }
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 5
+                    color: checked ? root.palette.highlight : "transparent"
+                    Label {
+                        anchors.centerIn: parent
+                        text: "事件日历"
+                        color: calendarTab.checked ? root.palette.highlightedText : root.palette.text
+                        font.bold: calendarTab.checked
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: calendarTab.activate()
                     }
                 }
                 }
@@ -336,6 +372,12 @@ ApplicationWindow {
                 }
             }
         }
+
+        IssueCalendar {
+            controller: App
+            statusOptions: root.statusOptions
+            onIssueRequested: issueId => root.selectIssue(issueId)
+        }
     }
 
     footer: ToolBar {
@@ -363,38 +405,46 @@ ApplicationWindow {
         title: "快速记录事件"
         modal: true
         anchors.centerIn: parent
-        width: 520
+        width: Math.min(parent.width - 60, 780)
+        height: Math.min(parent.height - 60, 650)
         onOpened: {
-            quickTitle.clear()
-            quickReporter.clear()
-            quickTitle.forceActiveFocus()
+            root.quickDraft = {priority: "normal"}
+            quickForm.focusTitle()
         }
-        ColumnLayout {
-            anchors.fill: parent
-            Label { text: "事件 *"; font.bold: true }
-            TextArea {
-                id: quickTitle
-                Layout.fillWidth: true
-                implicitHeight: 110
-                wrapMode: TextEdit.Wrap
-                placeholderText: "先记下来，其他信息可以稍后补充"
+
+        footer: DialogButtonBox {
+            Button { text: "取消"; onClicked: quickCreate.close() }
+            Button {
+                text: "先记下"
+                enabled: (root.quickDraft.title || "").trim().length > 0
+                onClicked: root.createIssue(false)
             }
-            Label { text: "事件提出人" }
-            TextField { id: quickReporter; Layout.fillWidth: true; placeholderText: "选填" }
-            RowLayout {
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                Button { text: "取消"; onClicked: quickCreate.close() }
-                Button {
-                    text: "先记下"
-                    enabled: quickTitle.text.trim().length > 0
-                    onClicked: root.createIssue(false)
-                }
-                Button {
-                    text: "保存并开始处理"
-                    highlighted: true
-                    enabled: quickTitle.text.trim().length > 0
-                    onClicked: root.createIssue(true)
+            Button {
+                text: "保存并开始处理"
+                highlighted: true
+                enabled: (root.quickDraft.title || "").trim().length > 0
+                onClicked: root.createIssue(true)
+            }
+        }
+
+        ScrollView {
+            id: quickScroll
+            anchors.fill: parent
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ColumnLayout {
+                width: quickScroll.availableWidth
+                spacing: 12
+                EventFormFields {
+                    id: quickForm
+                    Layout.fillWidth: true
+                    controller: App
+                    values: root.quickDraft
+                    compact: true
+                    onFieldEdited: function(fieldId, value) {
+                        const updated = Object.assign({}, root.quickDraft)
+                        updated[fieldId] = value
+                        root.quickDraft = updated
+                    }
                 }
             }
         }

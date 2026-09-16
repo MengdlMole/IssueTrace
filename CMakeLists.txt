@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(IssueTrace VERSION 0.5.0 LANGUAGES C CXX)
+project(IssueTrace VERSION 1.0.0 LANGUAGES C CXX)
 
 # Placeholder identity for development archives. A stable release must override
 # this with an identifier controlled by the publisher.
@@ -204,6 +204,9 @@ if(ISSUETRACE_BUILD_DESKTOP)
         OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml/IssueTrace"
         QML_FILES
             qml/Main.qml
+            qml/EventMetadataFields.qml
+            qml/EventFormFields.qml
+            qml/IssueCalendar.qml
             qml/IssueDetailsDialog.qml
             qml/IssueInbox.qml
             qml/IssueEditorList.qml

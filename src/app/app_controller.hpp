@@ -17,6 +17,7 @@ class AppController final : public QObject {
     Q_PROPERTY(QVariantList issues READ issues NOTIFY issuesChanged)
     Q_PROPERTY(QVariantList attentionIssues READ attentionIssues NOTIFY attentionChanged)
     Q_PROPERTY(QVariantList editorIssues READ editorIssues NOTIFY editorIssuesChanged)
+    Q_PROPERTY(QVariantList calendarIssues READ calendarIssues NOTIFY calendarIssuesChanged)
     Q_PROPERTY(QVariantList issueGroups READ issueGroups NOTIFY issueGroupsChanged)
     Q_PROPERTY(QVariantMap selectedIssue READ selectedIssue NOTIFY selectedIssueChanged)
     Q_PROPERTY(QString selectedIssueStatus READ selectedIssueStatus NOTIFY selectedIssueChanged)
@@ -25,6 +26,9 @@ class AppController final : public QObject {
     Q_PROPERTY(QVariantList formFields READ formFields NOTIFY formFieldsChanged)
     Q_PROPERTY(QStringList serviceOptions READ serviceOptions NOTIFY fieldOptionsChanged)
     Q_PROPERTY(QStringList versionOptions READ versionOptions NOTIFY fieldOptionsChanged)
+    Q_PROPERTY(QStringList reporterOptions READ reporterOptions NOTIFY fieldOptionsChanged)
+    Q_PROPERTY(QStringList assigneeOptions READ assigneeOptions NOTIFY fieldOptionsChanged)
+    Q_PROPERTY(QStringList groupOptions READ groupOptions NOTIFY fieldOptionsChanged)
     Q_PROPERTY(QString workspacePath READ workspacePath NOTIFY workspacePathChanged)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
@@ -35,6 +39,7 @@ public:
     [[nodiscard]] QVariantList issues() const { return issues_; }
     [[nodiscard]] QVariantList attentionIssues() const { return attentionIssues_; }
     [[nodiscard]] QVariantList editorIssues() const { return editorIssues_; }
+    [[nodiscard]] QVariantList calendarIssues() const { return calendarIssues_; }
     [[nodiscard]] QVariantList issueGroups() const { return issueGroups_; }
     [[nodiscard]] QVariantMap selectedIssue() const { return selectedIssue_; }
     [[nodiscard]] QString selectedIssueStatus() const {
@@ -45,12 +50,23 @@ public:
     [[nodiscard]] QVariantList formFields() const { return formFields_; }
     [[nodiscard]] QStringList serviceOptions() const { return serviceOptions_; }
     [[nodiscard]] QStringList versionOptions() const { return versionOptions_; }
+    [[nodiscard]] QStringList reporterOptions() const { return reporterOptions_; }
+    [[nodiscard]] QStringList assigneeOptions() const { return assigneeOptions_; }
+    [[nodiscard]] QStringList groupOptions() const { return groupOptions_; }
     [[nodiscard]] QString workspacePath() const { return workspacePath_; }
     [[nodiscard]] QString appVersion() const;
     [[nodiscard]] QString status() const { return status_; }
 
     Q_INVOKABLE bool createQuickIssue(const QString& title,
-                                      const QString& reporter);
+                                      const QString& reporter,
+                                      const QString& assignee = {},
+                                      const QString& group = {},
+                                      const QString& tags = {},
+                                      const QString& version = {},
+                                      const QString& service = {},
+                                      const QString& priority = QStringLiteral("normal"),
+                                      const QString& originalProblem = {},
+                                      const QString& ticket = {});
     Q_INVOKABLE void selectIssue(const QString& id);
     Q_INVOKABLE bool saveIssue(const QVariantMap& values);
     Q_INVOKABLE bool moveIssueGroup(const QString& sourcePath,
@@ -115,6 +131,7 @@ signals:
     void issuesChanged();
     void attentionChanged();
     void editorIssuesChanged();
+    void calendarIssuesChanged();
     void issueGroupsChanged();
     void issueGroupMoved(const QString& sourcePath, const QString& destinationPath);
     void selectedIssueChanged();
@@ -146,6 +163,7 @@ private:
     QVariantList issues_;
     QVariantList attentionIssues_;
     QVariantList editorIssues_;
+    QVariantList calendarIssues_;
     QVariantList issueGroups_;
     QVariantMap selectedIssue_;
     QVariantList timeline_;
@@ -153,6 +171,9 @@ private:
     QVariantList formFields_;
     QStringList serviceOptions_;
     QStringList versionOptions_;
+    QStringList reporterOptions_;
+    QStringList assigneeOptions_;
+    QStringList groupOptions_;
     FormTemplateDefinition defaultTemplate_;
     FormTemplateDefinition activeTemplate_;
     issuetrace::IssueQuery activeQuery_;

@@ -1,6 +1,7 @@
 #include "form_template.hpp"
 
 #include <QFile>
+#include <QStringList>
 
 #include <cassert>
 #include <iostream>
@@ -28,6 +29,25 @@ int main() {
     assert(definition.fields.front().toMap().value(QStringLiteral("id")) ==
            QStringLiteral("title"));
     assert(definition.fields.front().toMap().value(QStringLiteral("xlsxVisible")).toBool());
+    const QStringList expectedOrder{
+        QStringLiteral("title"), QStringLiteral("original_problem"),
+        QStringLiteral("priority"), QStringLiteral("group_name"),
+        QStringLiteral("tags"), QStringLiteral("reporter"),
+        QStringLiteral("assignee"), QStringLiteral("version"),
+        QStringLiteral("service"), QStringLiteral("ticket"),
+        QStringLiteral("progress"), QStringLiteral("conclusion"),
+        QStringLiteral("reported_at"), QStringLiteral("resolved_at"),
+        QStringLiteral("status")};
+    for (qsizetype index = 0; index < expectedOrder.size(); ++index) {
+        assert(definition.fields.at(index).toMap().value(QStringLiteral("id")) ==
+               expectedOrder.at(index));
+    }
+    assert(definition.fields.at(3).toMap().value(QStringLiteral("type")) ==
+           QStringLiteral("history_select"));
+    assert(definition.fields.at(5).toMap().value(QStringLiteral("type")) ==
+           QStringLiteral("history_select"));
+    assert(definition.fields.at(6).toMap().value(QStringLiteral("type")) ==
+           QStringLiteral("history_select"));
     assert(rejects("{}"));
     assert(rejects(R"({"schemaVersion":1})"));
     assert(rejects(R"json({"schemaVersion":1,"id":"x","version":1,"fields":[

@@ -157,6 +157,9 @@ void testIssueStoreCrudAndPersistence() {
         }
         assert(negativeTrackedTimeRejected);
         assert(store.distinctServices() == std::vector<std::string>{"支付服务"});
+        assert(store.distinctReporters() == std::vector<std::string>{"张三"});
+        assert(store.distinctAssignees() == std::vector<std::string>{"李四"});
+        assert(store.distinctGroups() == std::vector<std::string>{"支付域"});
         assert(store.findIssue(id)->updatedAt == updatedBeforeReminder);
 
         const auto note = store.createTimelineEntry(id, "note", "先检查数据库连接数");

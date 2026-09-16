@@ -895,6 +895,18 @@ std::vector<std::string> IssueStore::distinctVersions() const {
     return distinctIssueValues(impl_->db_, "version");
 }
 
+std::vector<std::string> IssueStore::distinctReporters() const {
+    return distinctIssueValues(impl_->db_, "reporter");
+}
+
+std::vector<std::string> IssueStore::distinctAssignees() const {
+    return distinctIssueValues(impl_->db_, "assignee");
+}
+
+std::vector<std::string> IssueStore::distinctGroups() const {
+    return distinctIssueValues(impl_->db_, "group_name");
+}
+
 void IssueStore::softDeleteIssue(const std::string& id) {
     execute(impl_->db_, "BEGIN IMMEDIATE");
     try {

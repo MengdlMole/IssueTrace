@@ -141,14 +141,36 @@ QString AppController::appVersion() const {
 }
 
 bool AppController::createQuickIssue(const QString& title,
-                                     const QString& reporter) {
+                                     const QString& reporter,
+                                     const QString& assignee,
+                                     const QString& group,
+                                     const QString& tags,
+                                     const QString& version,
+                                     const QString& service,
+                                     const QString& priority,
+                                     const QString& originalProblem,
+                                     const QString& ticket) {
     try {
         if (!store_) throw std::runtime_error("工作区尚未打开");
-        const auto issue = store_->createIssue(
+        auto issue = store_->createIssue(
             title.trimmed().toUtf8().toStdString(),
             reporter.trimmed().toUtf8().toStdString());
+        issue.assignee = assignee.trimmed().toUtf8().toStdString();
+        issue.groupName = normalizedGroup(group);
+        issue.tags = normalizedTags(tags);
+        issue.version = version.trimmed().toUtf8().toStdString();
+        issue.service = service.trimmed().toUtf8().toStdString();
+        issue.originalProblem = originalProblem.trimmed().toUtf8().toStdString();
+        issue.ticket = ticket.trimmed().toUtf8().toStdString();
+        const auto normalizedPriority = priority.trimmed();
+        issue.priority = normalizedPriority.isEmpty()
+            ? "normal" : normalizedPriority.toUtf8().toStdString();
+        store_->updateIssue(issue);
+        const auto saved = store_->findIssue(issue.id);
+        if (!saved) throw std::runtime_error("事件创建后无法重新读取");
         refreshIssues();
-        setSelected(issue);
+        refreshFieldOptions();
+        setSelected(*saved);
         refreshTimeline();
         setStatus(QStringLiteral("事件已创建，可以继续补充详情"));
         return true;
@@ -307,6 +329,7 @@ bool AppController::moveIssueGroup(const QString& sourcePath,
                                          .toUtf8().toStdString();
         }
         refreshIssues();
+        refreshFieldOptions();
         if (!selectedIssue_.isEmpty()) {
             if (const auto selected = store_->findIssue(toUtf8(selectedIssue_, "id"))) {
                 setSelected(*selected);
@@ -647,6 +670,20 @@ void AppController::refreshIssues() {
         }
         issues_ = std::move(refreshed);
         emit issuesChanged();
+        QVariantList calendar;
+        for (const auto& issue : store_->listIssues()) {
+            calendar.push_back(QVariantMap{
+                {QStringLiteral("id"), fromUtf8(issue.id)},
+                {QStringLiteral("title"), fromUtf8(issue.title)},
+                {QStringLiteral("status"), fromUtf8(issue.status)},
+                {QStringLiteral("group_name"), fromUtf8(issue.groupName)},
+                {QStringLiteral("reportedAt"),
+                 QDateTime::fromMSecsSinceEpoch(issue.reportedAt).toString(
+                     QStringLiteral("yyyy-MM-dd HH:mm"))},
+                {QStringLiteral("reportedAtMs"), issue.reportedAt}});
+        }
+        calendarIssues_ = std::move(calendar);
+        emit calendarIssuesChanged();
         refreshEditorIssues();
         refreshIssueGroups();
         refreshAttention();
@@ -1367,6 +1404,7 @@ QVariantMap AppController::toVariantMap(const issuetrace::StoredIssue& issue) co
                   QDateTime::fromMSecsSinceEpoch(issue.reportedAt).toString(
                       QStringLiteral("yyyy-MM-dd HH:mm")));
     result.insert(QStringLiteral("reported_at"), result.value(QStringLiteral("reportedAt")));
+    result.insert(QStringLiteral("reportedAtMs"), issue.reportedAt);
     result.insert(QStringLiteral("resolved_at"),
                   issue.resolvedAt
                       ? QDateTime::fromMSecsSinceEpoch(*issue.resolvedAt).toString(
@@ -1402,7 +1440,13 @@ void AppController::refreshFieldOptions() {
     if (!store_) return;
     serviceOptions_.clear();
     versionOptions_.clear();
+    reporterOptions_.clear();
+    assigneeOptions_.clear();
+    groupOptions_.clear();
     for (const auto& value : store_->distinctServices()) serviceOptions_.push_back(fromUtf8(value));
     for (const auto& value : store_->distinctVersions()) versionOptions_.push_back(fromUtf8(value));
+    for (const auto& value : store_->distinctReporters()) reporterOptions_.push_back(fromUtf8(value));
+    for (const auto& value : store_->distinctAssignees()) assigneeOptions_.push_back(fromUtf8(value));
+    for (const auto& value : store_->distinctGroups()) groupOptions_.push_back(fromUtf8(value));
     emit fieldOptionsChanged();
 }

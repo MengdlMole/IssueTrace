@@ -301,6 +301,17 @@ int main(int argc, char* argv[]) {
         const auto peerSaved = controller.saveIssue(peer);
         const auto defaultCreated = controller.createQuickIssue(
             QStringLiteral("默认分组事件"), QString{});
+        const auto quickMetadataCreated = controller.createQuickIssue(
+            QStringLiteral("快捷字段事件"), QStringLiteral("王五"),
+            QStringLiteral("赵六"), sourceParent, QStringLiteral("回归,快捷"),
+            QStringLiteral("v9.0"), QStringLiteral("快捷服务"),
+            QStringLiteral("high"), QStringLiteral("快速记录中的事件描述"),
+            QStringLiteral("INC-QUICK"));
+        const auto quickFormSaved =
+            controller.selectedIssue().value(QStringLiteral("original_problem")).toString() ==
+                QStringLiteral("快速记录中的事件描述") &&
+            controller.selectedIssue().value(QStringLiteral("ticket")).toString() ==
+                QStringLiteral("INC-QUICK");
         const auto groupMoved = controller.moveIssueGroup(
             sourceParent, targetGroup, QStringLiteral("child"));
         const auto groupSortedAfter = controller.moveIssueGroup(
@@ -327,7 +338,8 @@ int main(int argc, char* argv[]) {
                                 QStringLiteral("2.3"), QStringLiteral("INC-1"));
         QTimer::singleShot(100, &app,
             [&app, window, &controller, groupedSaved, targetSaved, peerSaved,
-             defaultCreated, groupMoved, groupSortedAfter, groupSortedBefore,
+             defaultCreated, quickMetadataCreated, quickFormSaved, groupMoved, groupSortedAfter,
+             groupSortedBefore,
              movedParent, targetGroup, sortPeer, afterPlacementWorked] {
                 const auto* editorList = window->findChild<QObject*>(
                     QStringLiteral("issueEditorList"));
@@ -337,8 +349,23 @@ int main(int argc, char* argv[]) {
                     QStringLiteral("managementTab"));
                 auto* recordTab = window->findChild<QObject*>(
                     QStringLiteral("recordTab"));
+                auto* calendarTab = window->findChild<QObject*>(
+                    QStringLiteral("calendarTab"));
                 auto* navigationTabs = window->findChild<QObject*>(
                     QStringLiteral("mainNavigationTabs"));
+                const auto* calendar = window->findChild<QObject*>(
+                    QStringLiteral("issueCalendar"));
+                const auto* managementSearch = window->findChild<QObject*>(
+                    QStringLiteral("managementSearchInput"));
+                auto* advancedFilters = window->findChild<QObject*>(
+                    QStringLiteral("advancedFiltersButton"));
+                const auto* advancedPanel = window->findChild<QObject*>(
+                    QStringLiteral("advancedFiltersPanel"));
+                const auto openedAdvancedFilters = advancedFilters &&
+                    QMetaObject::invokeMethod(advancedFilters, "activate");
+                const auto advancedFilterLayoutReady = openedAdvancedFilters &&
+                    managementSearch && advancedPanel &&
+                    advancedPanel->property("visible").toBool();
                 bool hasParentGroup = false;
                 bool hasChildGroup = false;
                 bool hasDefaultGroup = false;
@@ -366,20 +393,39 @@ int main(int argc, char* argv[]) {
                     QMetaObject::invokeMethod(recordTab, "activate");
                 const auto recordExclusive = openedRecord && managementTab &&
                     !managementTab->property("checked").toBool() &&
-                    recordTab->property("checked").toBool();
+                    recordTab->property("checked").toBool() && calendarTab &&
+                    !calendarTab->property("checked").toBool();
+                const auto openedCalendar = calendarTab &&
+                    QMetaObject::invokeMethod(calendarTab, "activate");
+                const auto calendarExclusive = openedCalendar && managementTab &&
+                    recordTab && !managementTab->property("checked").toBool() &&
+                    !recordTab->property("checked").toBool() &&
+                    calendarTab->property("checked").toBool() &&
+                    navigationTabs->property("currentIndex").toInt() == 2;
                 const auto openedManagement = managementTab &&
                     QMetaObject::invokeMethod(managementTab, "activate");
                 const auto managementExclusive = openedManagement && navigationTabs &&
                     managementTab->property("checked").toBool() &&
                     !recordTab->property("checked").toBool() &&
+                    !calendarTab->property("checked").toBool() &&
                     navigationTabs->property("currentIndex").toInt() == 0;
+                const auto historyOptionsReady =
+                    controller.reporterOptions().contains(QStringLiteral("王五")) &&
+                    controller.assigneeOptions().contains(QStringLiteral("赵六")) &&
+                    controller.groupOptions().contains(movedParent) &&
+                    controller.versionOptions().contains(QStringLiteral("v9.0")) &&
+                    controller.serviceOptions().contains(QStringLiteral("快捷服务"));
                 if (!editorList || !groupedSaved || !targetSaved || !peerSaved ||
-                    !defaultCreated || !groupMoved || !groupSortedAfter ||
+                    !calendar || !advancedFilterLayoutReady || !defaultCreated ||
+                    !quickMetadataCreated || !quickFormSaved ||
+                    !groupMoved || !groupSortedAfter ||
                     !groupSortedBefore || !afterPlacementWorked ||
-                    controller.editorIssues().size() < 4 ||
+                    controller.editorIssues().size() < 5 ||
+                    controller.calendarIssues().size() < 5 ||
                     controller.issues().isEmpty() || !hasParentGroup ||
                     !hasChildGroup || !hasDefaultGroup || !hasMovableDragProxy ||
-                    !beforePlacementWorked || !recordExclusive || !managementExclusive) {
+                    !beforePlacementWorked || !historyOptionsReady || !recordExclusive ||
+                    !calendarExclusive || !managementExclusive) {
                     QTextStream(stderr)
                         << "IssueTrace two-pane navigation check failed: editor="
                         << (editorList != nullptr)
@@ -391,7 +437,15 @@ int main(int argc, char* argv[]) {
                         << ", movableDragProxy=" << hasMovableDragProxy
                         << ", afterPlacement=" << afterPlacementWorked
                         << ", beforePlacement=" << beforePlacementWorked
+                        << ", historyOptions=" << historyOptionsReady
+                        << ", advancedFilters=" << advancedFilterLayoutReady
+                        << ", reporters=" << controller.reporterOptions().join(',')
+                        << ", assignees=" << controller.assigneeOptions().join(',')
+                        << ", groups=" << controller.groupOptions().join(',')
+                        << ", versions=" << controller.versionOptions().join(',')
+                        << ", services=" << controller.serviceOptions().join(',')
                         << ", recordExclusive=" << recordExclusive
+                        << ", calendarExclusive=" << calendarExclusive
                         << ", managementExclusive=" << managementExclusive << '\n';
                     app.exit(7);
                     return;

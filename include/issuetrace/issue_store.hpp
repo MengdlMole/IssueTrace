@@ -118,6 +118,9 @@ public:
     void pauseIssueTimer(const std::string& id);
     [[nodiscard]] std::vector<std::string> distinctServices() const;
     [[nodiscard]] std::vector<std::string> distinctVersions() const;
+    [[nodiscard]] std::vector<std::string> distinctReporters() const;
+    [[nodiscard]] std::vector<std::string> distinctAssignees() const;
+    [[nodiscard]] std::vector<std::string> distinctGroups() const;
     void softDeleteIssue(const std::string& id);
     void restoreIssue(const std::string& id);
     [[nodiscard]] TimelineEntry createTimelineEntry(

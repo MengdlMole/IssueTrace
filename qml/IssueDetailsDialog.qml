@@ -10,11 +10,6 @@ Dialog {
     property var draftIssue: ({})
     property bool dirty: false
 
-    function optionIndex(options, value) {
-        for (let i = 0; i < options.length; ++i)
-            if (options[i].value === value) return i
-        return 0
-    }
     function setDraftField(id, value) {
         const updated = Object.assign({}, draftIssue)
         updated[id] = value
@@ -24,7 +19,8 @@ Dialog {
     }
     function reload() {
         draftIssue = Object.assign({}, controller.selectedIssue)
-        const totalMinutes = Math.floor(Number(controller.selectedIssue.trackedMilliseconds || 0) / 60000)
+        const totalMinutes = Math.floor(Number(
+            controller.selectedIssue.trackedMilliseconds || 0) / 60000)
         trackedHours.value = Math.floor(totalMinutes / 60)
         trackedMinutes.value = totalMinutes % 60
         dirty = false
@@ -36,11 +32,11 @@ Dialog {
         return true
     }
 
-    title: "更多信息"
+    title: "编辑事件"
     modal: true
     anchors.centerIn: parent
-    width: 650
-    height: Math.min(parent.height - 70, 650)
+    width: Math.min(parent.width - 48, 820)
+    height: Math.min(parent.height - 48, 720)
     closePolicy: Popup.NoAutoClose
     onOpened: reload()
 
@@ -51,42 +47,33 @@ Dialog {
     }
 
     footer: DialogButtonBox {
-        Button {
-            text: "关闭"
-            onClicked: if (root.flush()) root.close()
-        }
+        Button { text: "关闭"; onClicked: if (root.flush()) root.close() }
     }
 
     ScrollView {
+        id: detailsScroll
         anchors.fill: parent
+        clip: true
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
         ColumnLayout {
-            width: root.availableWidth
-            Label { text: "事件描述"; font.bold: true }
-            ScrollView {
+            width: detailsScroll.availableWidth
+            spacing: 12
+
+            EventFormFields {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 130
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
-                TextArea {
-                    id: descriptionText
-                    text: root.draftIssue.original_problem || ""
-                    wrapMode: TextEdit.Wrap
-                    placeholderText: "记录原始描述；可直接粘贴截图或把图片拖到这里"
-                    onTextChanged: if (activeFocus) root.setDraftField("original_problem", text)
-                    Keys.onPressed: function(event) {
-                        if (event.matches(StandardKey.Paste) && root.controller.clipboardHasImage()) {
-                            if (root.flush()) root.controller.addDescriptionClipboardImage()
-                            event.accepted = true
-                        }
-                    }
-                    DropArea {
-                        anchors.fill: parent
-                        onDropped: function(drop) {
-                            if (drop.hasUrls && drop.urls.length > 0 && root.flush())
-                                root.controller.addDescriptionImage(drop.urls[0])
-                        }
-                    }
+                controller: root.controller
+                values: root.draftIssue
+                enableDescriptionImages: true
+                onFieldEdited: (fieldId, value) => root.setDraftField(fieldId, value)
+                onDescriptionImagePasteRequested: if (root.flush())
+                    root.controller.addDescriptionClipboardImage()
+                onDescriptionImageDropped: function(source) {
+                    if (root.flush()) root.controller.addDescriptionImage(source)
                 }
             }
+
             Flow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.max(0, childrenRect.height)
@@ -95,11 +82,13 @@ Dialog {
                     model: root.controller.descriptionAttachments
                     delegate: Frame {
                         required property var modelData
-                        width: 160; height: 138
+                        width: 160
+                        height: 138
                         ColumnLayout {
                             anchors.fill: parent
                             Image {
-                                Layout.fillWidth: true; Layout.fillHeight: true
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
                                 source: modelData.url
                                 fillMode: Image.PreserveAspectFit
                                 autoTransform: true
@@ -110,8 +99,15 @@ Dialog {
                             }
                             RowLayout {
                                 Layout.fillWidth: true
-                                Label { Layout.fillWidth: true; text: modelData.name; elide: Text.ElideMiddle }
-                                ToolButton { text: "×"; onClicked: root.controller.deleteAttachment(modelData.id) }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: modelData.name
+                                    elide: Text.ElideMiddle
+                                }
+                                ToolButton {
+                                    text: "×"
+                                    onClicked: root.controller.deleteAttachment(modelData.id)
+                                }
                             }
                         }
                     }
@@ -131,7 +127,51 @@ Dialog {
                 Label { text: "也可以拖放图片；双击缩略图打开"; color: palette.mid }
                 Item { Layout.fillWidth: true }
             }
+
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: palette.midlight }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: width >= 620 ? 2 : 1
+                columnSpacing: 14
+                rowSpacing: 10
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Label { text: "事件进展"; font.bold: true }
+                    Label {
+                        Layout.fillWidth: true
+                        text: root.draftIssue.progress || "尚未记录进展"
+                        color: root.draftIssue.progress ? palette.text : palette.mid
+                        wrapMode: Text.Wrap
+                        padding: 7
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Label { text: "事件结论"; font.bold: true }
+                    TextArea {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 92
+                        text: root.draftIssue.conclusion || ""
+                        wrapMode: TextEdit.Wrap
+                        placeholderText: "根因、解决结果或最终结论"
+                        onTextChanged: if (activeFocus)
+                            root.setDraftField("conclusion", text)
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Label { text: "提出时间"; font.bold: true }
+                    Label { text: root.draftIssue.reported_at || "—"; color: palette.mid; padding: 7 }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Label { text: "解决时间"; font.bold: true }
+                    Label { text: root.draftIssue.resolved_at || "—"; color: palette.mid; padding: 7 }
+                }
+            }
+
             Label { text: "累计处理时间"; font.bold: true }
             RowLayout {
                 Layout.fillWidth: true
@@ -169,29 +209,9 @@ Dialog {
                 Layout.fillWidth: true
                 text: root.controller.selectedIssue.timerRunning
                     ? "计时进行中，请先暂停计时再修改。"
-                    : "可修正误计时；修改不会改变事件的最后修改时间。"
+                    : "后续计时会从此累计值继续增加。"
                 color: root.controller.selectedIssue.timerRunning ? palette.accent : palette.mid
                 wrapMode: Text.Wrap
-            }
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: palette.midlight }
-            Repeater {
-                model: root.controller.formFields
-                delegate: ColumnLayout {
-                    required property var modelData
-                    Layout.fillWidth: true
-                    visible: modelData.id !== "status" && modelData.id !== "original_problem"
-                    Label { text: modelData.label }
-                    Loader {
-                        Layout.fillWidth: true
-                        property var definition: modelData
-                        sourceComponent: definition.readOnly ? readOnlyEditor
-                            : definition.type === "select" ? selectEditor
-                            : definition.type === "history_select" ? historyEditor
-                            : definition.type === "multiline_text" ? multilineEditor
-                            : textEditor
-                        onLoaded: item.field = definition
-                    }
-                }
             }
         }
     }
@@ -207,72 +227,11 @@ Dialog {
     Timer {
         id: saveTimer
         interval: 800
-        onTriggered: if (root.dirty && root.controller.saveIssue(root.draftIssue)) root.dirty = false
+        onTriggered: if (root.dirty && root.controller.saveIssue(root.draftIssue))
+            root.dirty = false
     }
     Connections {
         target: root.controller
         function onSelectedIssueChanged() { root.reload() }
-    }
-
-    Component {
-        id: textEditor
-        TextField {
-            property var field
-            text: field ? (root.draftIssue[field.id] || "") : ""
-            placeholderText: !field ? "" : field.id === "group_name"
-                ? "多级分组使用 / 分隔，例如：业务/支付/网关"
-                : field.id === "tags" ? "多个标签使用英文逗号分隔" : ""
-            onTextEdited: if (field) root.setDraftField(field.id, text)
-        }
-    }
-    Component {
-        id: historyEditor
-        ComboBox {
-            property var field
-            editable: true
-            model: !field ? [] : field.id === "service"
-                ? root.controller.serviceOptions : root.controller.versionOptions
-            editText: field ? (root.draftIssue[field.id] || "") : ""
-            onEditTextChanged: if (activeFocus && field)
-                root.setDraftField(field.id, editText.trim())
-            onAccepted: if (field) root.setDraftField(field.id, editText.trim())
-            onActivated: if (field) root.setDraftField(field.id, currentText)
-        }
-    }
-    Component {
-        id: multilineEditor
-        ScrollView {
-            id: multilineContainer
-            property var field
-            implicitHeight: 110
-            TextArea {
-                text: multilineContainer.field ? (root.draftIssue[multilineContainer.field.id] || "") : ""
-                wrapMode: TextEdit.Wrap
-                placeholderText: multilineContainer.field && multilineContainer.field.id === "original_problem"
-                    ? "支持 Markdown；图片可直接作为事件记录粘贴，并会随导出保留" : ""
-                onTextChanged: if (activeFocus && multilineContainer.field)
-                    root.setDraftField(multilineContainer.field.id, text)
-            }
-        }
-    }
-    Component {
-        id: selectEditor
-        ComboBox {
-            property var field
-            model: field ? (field.options || []) : []
-            textRole: "label"
-            valueRole: "value"
-            currentIndex: field ? root.optionIndex(model, root.draftIssue[field.id]) : 0
-            onActivated: if (field) root.setDraftField(field.id, currentValue)
-        }
-    }
-    Component {
-        id: readOnlyEditor
-        Label {
-            property var field
-            text: field ? (root.draftIssue[field.id] || "—") : "—"
-            color: palette.mid
-            padding: 6
-        }
     }
 }

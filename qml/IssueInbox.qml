@@ -11,6 +11,7 @@ Pane {
     property string selectedGroupPath: ""
     property var selectedTags: []
     property var collapsedGroups: ({})
+    property bool advancedFiltersVisible: false
     readonly property bool groupDragUsesMovableProxy: true
     readonly property string selectedIssueStatusText: {
         for (let i = 0; i < controller.issues.length; ++i) {
@@ -114,6 +115,40 @@ Pane {
         selectedGroupPath = path
         applyFilters()
     }
+    function activeFilterCount() {
+        let count = 0
+        if (searchInput.text.trim()) ++count
+        if (statusFilter.currentValue) ++count
+        if (priorityFilter.currentValue) ++count
+        if (selectedGroupPath) ++count
+        count += selectedTags.length
+        if (serviceFilter.currentIndex > 0) ++count
+        if (versionFilter.currentIndex > 0) ++count
+        if (ticketFilter.text.trim()) ++count
+        if (minimumDuration.value > 0) ++count
+        if (maximumDuration.value > 0) ++count
+        return count
+    }
+    function advancedFilterCount() {
+        return (serviceFilter.currentIndex > 0 ? 1 : 0)
+            + (versionFilter.currentIndex > 0 ? 1 : 0)
+            + (ticketFilter.text.trim() ? 1 : 0)
+            + (minimumDuration.value > 0 ? 1 : 0)
+            + (maximumDuration.value > 0 ? 1 : 0)
+    }
+    function clearAllFilters() {
+        searchInput.clear()
+        statusFilter.currentIndex = 0
+        priorityFilter.currentIndex = 0
+        serviceFilter.currentIndex = 0
+        versionFilter.currentIndex = 0
+        ticketFilter.clear()
+        minimumDuration.value = 0
+        maximumDuration.value = 0
+        selectedTags = []
+        selectedGroupPath = ""
+        applyFilters()
+    }
 
     padding: 0
 
@@ -127,19 +162,32 @@ Pane {
             Layout.rightMargin: 16
             Layout.topMargin: 12
             Layout.bottomMargin: 12
-            spacing: 9
+            spacing: 10
             RowLayout {
                 Layout.fillWidth: true
                 Label { text: "事件管理"; font.pixelSize: 23; font.bold: true }
                 Label { Layout.fillWidth: true; text: "按分组浏览、筛选和维护事件"; color: palette.mid }
-                Label { text: root.controller.issues.length + " 个结果"; color: palette.mid }
+                Label {
+                    text: root.controller.issues.length + " 个结果"
+                    color: palette.mid
+                    font.bold: true
+                }
+                Button {
+                    visible: root.activeFilterCount() > 0
+                    objectName: "resetManagementFiltersButton"
+                    text: "重置筛选"
+                    flat: true
+                    onClicked: root.clearAllFilters()
+                }
             }
             RowLayout {
                 Layout.fillWidth: true
+                spacing: 8
                 TextField {
                     id: searchInput
                     Layout.fillWidth: true
-                    placeholderText: "搜索标题、描述、进展、标签、服务、版本或跟踪单"
+                    objectName: "managementSearchInput"
+                    placeholderText: "搜索事件、描述、进展、标签、服务、版本或问题单"
                     onTextEdited: searchDelay.restart()
                     onAccepted: root.applyFilters()
                 }
@@ -156,41 +204,168 @@ Pane {
                     textRole: "label"; valueRole: "value"
                     onActivated: root.applyFilters()
                 }
+                Button {
+                    objectName: "advancedFiltersButton"
+                    function activate() {
+                        root.advancedFiltersVisible = !root.advancedFiltersVisible
+                    }
+                    text: "更多筛选" + (root.advancedFilterCount() > 0
+                        ? " · " + root.advancedFilterCount() : "")
+                        + (root.advancedFiltersVisible ? "  ▴" : "  ▾")
+                    checkable: true
+                    checked: root.advancedFiltersVisible
+                    highlighted: root.advancedFilterCount() > 0
+                    onClicked: activate()
+                }
             }
-            RowLayout {
+
+            Rectangle {
+                objectName: "advancedFiltersPanel"
                 Layout.fillWidth: true
-                ComboBox {
-                    id: serviceFilter
-                    Layout.preferredWidth: 155
-                    model: ["全部服务"].concat(root.controller.serviceOptions)
-                    onActivated: root.applyFilters()
+                Layout.preferredHeight: advancedGrid.implicitHeight + 20
+                visible: root.advancedFiltersVisible
+                color: palette.alternateBase
+                border.color: palette.midlight
+                radius: 8
+                GridLayout {
+                    id: advancedGrid
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    columns: width >= 760 ? 4 : 2
+                    columnSpacing: 10
+                    rowSpacing: 8
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Label { text: "服务"; color: palette.mid; font.pixelSize: 11 }
+                        ComboBox {
+                            id: serviceFilter
+                            Layout.fillWidth: true
+                            model: ["全部服务"].concat(root.controller.serviceOptions)
+                            onActivated: root.applyFilters()
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Label { text: "版本号"; color: palette.mid; font.pixelSize: 11 }
+                        ComboBox {
+                            id: versionFilter
+                            Layout.fillWidth: true
+                            model: ["全部版本"].concat(root.controller.versionOptions)
+                            onActivated: root.applyFilters()
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Label { text: "问题单"; color: palette.mid; font.pixelSize: 11 }
+                        TextField {
+                            id: ticketFilter
+                            Layout.fillWidth: true
+                            placeholderText: "编号包含…"
+                            onTextEdited: searchDelay.restart()
+                            onAccepted: root.applyFilters()
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Label { text: "处理时长（分钟）"; color: palette.mid; font.pixelSize: 11 }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            SpinBox {
+                                id: minimumDuration
+                                Layout.fillWidth: true
+                                from: 0; to: 100000; editable: true
+                                onValueModified: searchDelay.restart()
+                                ToolTip.visible: hovered; ToolTip.text: "最小时长；0 表示不限"
+                            }
+                            Label { text: "—"; color: palette.mid }
+                            SpinBox {
+                                id: maximumDuration
+                                Layout.fillWidth: true
+                                from: 0; to: 100000; editable: true
+                                onValueModified: searchDelay.restart()
+                                ToolTip.visible: hovered; ToolTip.text: "最大时长；0 表示不限"
+                            }
+                        }
+                    }
                 }
-                ComboBox {
-                    id: versionFilter
-                    Layout.preferredWidth: 145
-                    model: ["全部版本"].concat(root.controller.versionOptions)
-                    onActivated: root.applyFilters()
+            }
+
+            Flow {
+                Layout.fillWidth: true
+                visible: root.activeFilterCount() > 0
+                spacing: 6
+                Label {
+                    text: "当前条件"
+                    height: 28
+                    verticalAlignment: Text.AlignVCenter
+                    color: palette.mid
                 }
-                TextField {
-                    id: ticketFilter
-                    Layout.fillWidth: true
-                    placeholderText: "跟踪单包含…"
-                    onTextEdited: searchDelay.restart()
-                    onAccepted: root.applyFilters()
+                Button {
+                    visible: searchInput.text.trim().length > 0
+                    text: "搜索：" + searchInput.text.trim() + "  ×"
+                    height: 28; flat: true
+                    onClicked: { searchInput.clear(); root.applyFilters() }
                 }
-                Label { text: "处理时长（分钟）"; color: palette.mid }
-                SpinBox {
-                    id: minimumDuration
-                    from: 0; to: 100000; editable: true
-                    onValueModified: searchDelay.restart()
-                    ToolTip.visible: hovered; ToolTip.text: "最小时长；0 表示不限"
+                Button {
+                    visible: root.selectedGroupPath.length > 0
+                    text: "分组：" + root.selectedGroupLabel() + "  ×"
+                    height: 28; flat: true
+                    onClicked: root.selectGroup("")
                 }
-                Label { text: "至"; color: palette.mid }
-                SpinBox {
-                    id: maximumDuration
-                    from: 0; to: 100000; editable: true
-                    onValueModified: searchDelay.restart()
-                    ToolTip.visible: hovered; ToolTip.text: "最大时长；0 表示不限"
+                Button {
+                    visible: statusFilter.currentIndex > 0
+                    text: "状态：" + statusFilter.currentText + "  ×"
+                    height: 28; flat: true
+                    onClicked: { statusFilter.currentIndex = 0; root.applyFilters() }
+                }
+                Button {
+                    visible: priorityFilter.currentIndex > 0
+                    text: "优先级：" + priorityFilter.currentText + "  ×"
+                    height: 28; flat: true
+                    onClicked: { priorityFilter.currentIndex = 0; root.applyFilters() }
+                }
+                Button {
+                    visible: serviceFilter.currentIndex > 0
+                    text: "服务：" + serviceFilter.currentText + "  ×"
+                    height: 28; flat: true
+                    onClicked: { serviceFilter.currentIndex = 0; root.applyFilters() }
+                }
+                Button {
+                    visible: versionFilter.currentIndex > 0
+                    text: "版本：" + versionFilter.currentText + "  ×"
+                    height: 28; flat: true
+                    onClicked: { versionFilter.currentIndex = 0; root.applyFilters() }
+                }
+                Button {
+                    visible: ticketFilter.text.trim().length > 0
+                    text: "问题单：" + ticketFilter.text.trim() + "  ×"
+                    height: 28; flat: true
+                    onClicked: { ticketFilter.clear(); root.applyFilters() }
+                }
+                Button {
+                    visible: minimumDuration.value > 0
+                    text: "时长 ≥ " + minimumDuration.value + " 分钟  ×"
+                    height: 28; flat: true
+                    onClicked: { minimumDuration.value = 0; root.applyFilters() }
+                }
+                Button {
+                    visible: maximumDuration.value > 0
+                    text: "时长 ≤ " + maximumDuration.value + " 分钟  ×"
+                    height: 28; flat: true
+                    onClicked: { maximumDuration.value = 0; root.applyFilters() }
+                }
+                Repeater {
+                    model: root.selectedTags
+                    delegate: Button {
+                        required property string modelData
+                        text: "标签：#" + modelData + "  ×"
+                        height: 28; flat: true
+                        onClicked: root.toggleTag(modelData)
+                    }
                 }
             }
         }
@@ -405,22 +580,6 @@ Pane {
                             onActivated: root.applyFilters()
                         }
                     }
-                    Flow {
-                        Layout.fillWidth: true
-                        visible: root.selectedTags.length > 0
-                        spacing: 6
-                        Label { text: "已选标签"; height: 28; verticalAlignment: Text.AlignVCenter; color: palette.mid }
-                        Repeater {
-                            model: root.selectedTags
-                            delegate: Button {
-                                required property string modelData
-                                text: "#" + modelData + "  ×"
-                                height: 28
-                                onClicked: root.toggleTag(modelData)
-                            }
-                        }
-                        Button { text: "清空"; height: 28; onClicked: root.clearTags() }
-                    }
                     ListView {
                         id: issueList
                         Layout.fillWidth: true
@@ -524,7 +683,7 @@ Pane {
                                             {label: "分组", value: issueCard.issue.groupDisplay || "默认分组"},
                                             {label: "服务", value: issueCard.issue.service || ""},
                                             {label: "版本", value: issueCard.issue.version || ""},
-                                            {label: "跟踪单", value: issueCard.issue.ticket || ""}
+                                            {label: "问题单", value: issueCard.issue.ticket || ""}
                                         ]
                                         delegate: Rectangle {
                                             required property var modelData
