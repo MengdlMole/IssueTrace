@@ -10,7 +10,9 @@ ApplicationWindow {
     minimumWidth: 900
     minimumHeight: 600
     visible: true
-    title: "IssueTrace · 问题收件箱"
+    title: "IssueTrace · 事件管理"
+    property double clockNow: Date.now()
+    property int currentPage: 0
 
     property url pendingRestoreFolder: ""
     property url pendingUpdateArchive: ""
@@ -30,12 +32,27 @@ ApplicationWindow {
         const selectedId = App.selectedIssue.id
         for (let i = 0; i < App.issues.length; ++i)
             if (App.issues[i].id === selectedId) return App.issues[i]
+        for (let i = 0; i < App.editorIssues.length; ++i)
+            if (App.editorIssues[i].id === selectedId) return App.editorIssues[i]
         return App.selectedIssue
     }
     function selectIssue(id) {
         if (!issueDetails.flush()) return
         timelineComposer.saveDraft()
         App.selectIssue(id)
+        currentPage = 1
+    }
+    function editIssue(id) {
+        if (!issueDetails.flush()) return
+        timelineComposer.saveDraft()
+        App.selectIssue(id)
+        currentPage = 0
+        issueDetails.open()
+    }
+    function showManagement() {
+        if (!issueDetails.flush()) return
+        timelineComposer.saveDraft()
+        currentPage = 0
     }
     function markStatus(status) {
         if (!issueDetails.flush()) return
@@ -45,6 +62,7 @@ ApplicationWindow {
         if (!App.createQuickIssue(quickTitle.text, quickReporter.text)) return
         if (startNow) App.setSelectedIssueStatus("investigating")
         quickCreate.close()
+        currentPage = 1
         timelineComposer.forceInputFocus()
     }
     function openCustomReminder() {
@@ -52,6 +70,17 @@ ApplicationWindow {
             new Date(Date.now() + 2 * 60 * 60 * 1000), "yyyy-MM-dd HH:mm")
         customReminderError.text = ""
         customReminderDialog.open()
+    }
+    function trackedDurationText() {
+        let value = Number(App.selectedIssue.trackedMilliseconds || 0)
+        if (App.selectedIssue.timerRunning)
+            value += Math.max(0, clockNow - Number(App.selectedIssue.timerStartedAtMs || clockNow))
+        const seconds = Math.floor(value / 1000)
+        const hours = Math.floor(seconds / 3600)
+        const minutes = Math.floor((seconds % 3600) / 60)
+        const rest = seconds % 60
+        return (hours > 0 ? hours + ":" : "")
+            + String(minutes).padStart(2, "0") + ":" + String(rest).padStart(2, "0")
     }
 
     onClosing: function(close) {
@@ -78,32 +107,108 @@ ApplicationWindow {
                 text: "记下来 · 持续跟进 · 到时提醒"
                 color: palette.mid
             }
+            Rectangle {
+                id: navigationTabs
+                objectName: "mainNavigationTabs"
+                property int currentIndex: root.currentPage
+                Layout.preferredWidth: 230
+                Layout.preferredHeight: 38
+                color: root.palette.midlight
+                radius: 7
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 3
+                    spacing: 3
+                Rectangle {
+                    id: managementTab
+                    objectName: "managementTab"
+                    property bool checked: root.currentPage === 0
+                    function activate() { root.showManagement() }
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 5
+                    color: checked ? root.palette.highlight : "transparent"
+                    Label {
+                        anchors.centerIn: parent
+                        text: "事件管理"
+                        color: managementTab.checked ? root.palette.highlightedText : root.palette.text
+                        font.bold: managementTab.checked
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: managementTab.activate()
+                    }
+                }
+                Rectangle {
+                    id: recordTab
+                    objectName: "recordTab"
+                    property bool checked: root.currentPage === 1
+                    enabled: App.selectedIssue.id !== undefined
+                    function activate() { if (enabled) root.currentPage = 1 }
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 5
+                    color: checked ? root.palette.highlight : "transparent"
+                    opacity: enabled ? 1 : 0.45
+                    Label {
+                        anchors.centerIn: parent
+                        text: "事件记录"
+                        color: recordTab.checked ? root.palette.highlightedText : root.palette.text
+                        font.bold: recordTab.checked
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: recordTab.enabled
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: recordTab.activate()
+                    }
+                }
+                }
+            }
             Label {
                 visible: issueDetails.dirty
                 text: "保存中…"
                 color: "#b66a00"
             }
             Button { text: "工具"; onClicked: toolsMenu.popup() }
-            Button { text: "+ 记录问题"; highlighted: true; onClicked: quickCreate.open() }
+            Button { text: "+ 记录事件"; highlighted: true; onClicked: quickCreate.open() }
         }
     }
 
-    SplitView {
+    StackLayout {
         anchors.fill: parent
+        currentIndex: root.currentPage
 
         IssueInbox {
             controller: App
             selectedIssueId: App.selectedIssue.id || ""
             statusOptions: root.statusOptions
             onIssueRequested: issueId => root.selectIssue(issueId)
-            onFilterRequested: (text, status) => App.filterIssues(
-                text, status, "", "", "updated_desc", 0)
+            onEditIssueRequested: issueId => root.editIssue(issueId)
+            onFilterRequested: (text, status, priority, tags, minimumMinutes,
+                                maximumMinutes, groupPath, service, version,
+                                ticket, sort) =>
+                App.filterIssues(text, status, service, "", sort, 0, priority,
+                                 tags, "", minimumMinutes, maximumMinutes,
+                                 groupPath, version, ticket)
         }
 
-        Pane {
-            SplitView.fillWidth: true
-            SplitView.minimumWidth: 550
-            padding: 14
+        SplitView {
+            IssueEditorList {
+                SplitView.preferredWidth: 320
+                SplitView.minimumWidth: 265
+                SplitView.maximumWidth: 430
+                controller: App
+                selectedIssueId: App.selectedIssue.id || ""
+                statusOptions: root.statusOptions
+                onIssueRequested: issueId => root.selectIssue(issueId)
+            }
+
+            Pane {
+                SplitView.fillWidth: true
+                SplitView.minimumWidth: 560
+                padding: 14
 
             ColumnLayout {
                 anchors.fill: parent
@@ -112,6 +217,10 @@ ApplicationWindow {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Button {
+                        text: "‹ 返回管理"
+                        onClicked: root.showManagement()
+                    }
                     ColumnLayout {
                         Layout.fillWidth: true
                         Label {
@@ -122,14 +231,25 @@ ApplicationWindow {
                             elide: Text.ElideRight
                         }
                         Label {
-                            text: "问题已记录 " + (root.liveSelectedIssue().ageText || "")
+                            text: "事件已记录 " + (root.liveSelectedIssue().ageText || "")
                                 + " · 当前状态停留 "
                                 + (root.liveSelectedIssue().statusDurationText || "")
                             color: palette.mid
                         }
                     }
                     Button { text: "更多信息"; onClicked: issueDetails.open() }
-                    Button { text: "导出总结"; onClicked: exportDialog.open() }
+                    Label {
+                        text: root.trackedDurationText()
+                        font.family: "monospace"
+                        font.bold: true
+                    }
+                    Button {
+                        text: App.selectedIssue.timerRunning ? "暂停计时" : "开始计时"
+                        highlighted: App.selectedIssue.timerRunning === true
+                        onClicked: App.selectedIssue.timerRunning
+                            ? App.pauseSelectedIssueTimer() : App.startSelectedIssueTimer()
+                    }
+                    Button { text: "导出事件"; onClicked: exportDialog.open() }
                 }
 
                 RowLayout {
@@ -207,12 +327,13 @@ ApplicationWindow {
                 }
             }
 
-            Label {
-                anchors.centerIn: parent
-                visible: App.selectedIssue.id === undefined
-                text: "从左侧选择问题\n或按 Ctrl/Cmd + N 快速记录"
-                horizontalAlignment: Text.AlignHCenter
-                color: palette.mid
+                Label {
+                    anchors.centerIn: parent
+                    visible: App.selectedIssue.id === undefined
+                    text: "请从左侧选择事件\n或按 Ctrl/Cmd + N 快速记录"
+                    horizontalAlignment: Text.AlignHCenter
+                    color: palette.mid
+                }
             }
         }
     }
@@ -228,6 +349,7 @@ ApplicationWindow {
         }
     }
 
+    Timer { interval: 1000; running: true; repeat: true; onTriggered: root.clockNow = Date.now() }
     Timer { interval: 60000; running: true; repeat: true; onTriggered: App.refreshIssues() }
     Connections {
         target: App
@@ -238,7 +360,7 @@ ApplicationWindow {
 
     Dialog {
         id: quickCreate
-        title: "快速记录问题"
+        title: "快速记录事件"
         modal: true
         anchors.centerIn: parent
         width: 520
@@ -249,7 +371,7 @@ ApplicationWindow {
         }
         ColumnLayout {
             anchors.fill: parent
-            Label { text: "问题 *"; font.bold: true }
+            Label { text: "事件 *"; font.bold: true }
             TextArea {
                 id: quickTitle
                 Layout.fillWidth: true
@@ -257,7 +379,7 @@ ApplicationWindow {
                 wrapMode: TextEdit.Wrap
                 placeholderText: "先记下来，其他信息可以稍后补充"
             }
-            Label { text: "问题提出人" }
+            Label { text: "事件提出人" }
             TextField { id: quickReporter; Layout.fillWidth: true; placeholderText: "选填" }
             RowLayout {
                 Layout.fillWidth: true
@@ -348,7 +470,7 @@ ApplicationWindow {
         MenuItem { text: "创建完整备份…"; onTriggered: backupDialog.open() }
         MenuItem { text: "从备份恢复…"; onTriggered: restoreFolderDialog.open() }
         MenuSeparator {}
-        MenuItem { text: "导出问题列表 XLSX…"; onTriggered: xlsxExportDialog.open() }
+        MenuItem { text: "导出事件列表 XLSX…"; onTriggered: xlsxExportDialog.open() }
         MenuItem { text: "从新版压缩包升级…"; onTriggered: updateArchiveDialog.open() }
     }
 
@@ -385,12 +507,12 @@ ApplicationWindow {
     }
     FolderDialog {
         id: exportDialog
-        title: "选择 Markdown 总结导出位置"
+        title: "选择事件 Markdown 导出位置"
         onAccepted: App.exportMarkdown(selectedFolder)
     }
     FileDialog {
         id: xlsxExportDialog
-        title: "导出问题列表"
+        title: "导出事件列表"
         fileMode: FileDialog.SaveFile
         nameFilters: ["Excel 工作簿 (*.xlsx)"]
         defaultSuffix: "xlsx"

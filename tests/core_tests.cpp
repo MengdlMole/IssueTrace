@@ -136,11 +136,27 @@ void testIssueStoreCrudAndPersistence() {
         issue->statusChangedAt = expectedStatusChangedAt;
         issue->remindAt = expectedRemindAt;
         issue->priority = "urgent";
+        issue->groupName = "支付域";
+        issue->tags = "线上,超时";
         issue->conclusion = "连接池耗尽";
         store.updateIssue(*issue);
         const auto updatedBeforeReminder = store.findIssue(id)->updatedAt;
         expectedRemindAt += 60000;
         store.setIssueReminder(id, expectedRemindAt);
+        store.startIssueTimer(id);
+        assert(store.findIssue(id)->timerStartedAt.has_value());
+        store.pauseIssueTimer(id);
+        assert(!store.findIssue(id)->timerStartedAt.has_value());
+        store.setIssueTrackedMilliseconds(id, 5'400'000);
+        assert(store.findIssue(id)->trackedMilliseconds == 5'400'000);
+        bool negativeTrackedTimeRejected = false;
+        try {
+            store.setIssueTrackedMilliseconds(id, -1);
+        } catch (const std::invalid_argument&) {
+            negativeTrackedTimeRejected = true;
+        }
+        assert(negativeTrackedTimeRejected);
+        assert(store.distinctServices() == std::vector<std::string>{"支付服务"});
         assert(store.findIssue(id)->updatedAt == updatedBeforeReminder);
 
         const auto note = store.createTimelineEntry(id, "note", "先检查数据库连接数");
@@ -175,6 +191,29 @@ void testIssueStoreCrudAndPersistence() {
         issuetrace::IssueQuery priorityQuery;
         priorityQuery.sort = "priority_desc";
         assert(store.searchIssues(priorityQuery).front().id == id);
+        priorityQuery.priority = "urgent";
+        priorityQuery.tag = "超时";
+        priorityQuery.progress = "检查连接池";
+        assert(store.searchIssues(priorityQuery).size() == 1);
+        priorityQuery.tag = "线上";
+        priorityQuery.titleText = "接口偶发";
+        assert(store.searchIssues(priorityQuery).size() == 1);
+        priorityQuery.titleText = "不存在";
+        assert(store.searchIssues(priorityQuery).empty());
+        priorityQuery.titleText.clear();
+
+        sqlite3* timerDatabase = nullptr;
+        assert(sqlite3_open((root / "issuetrace.db").string().c_str(),
+                            &timerDatabase) == SQLITE_OK);
+        assert(sqlite3_exec(timerDatabase,
+            "UPDATE issues SET tracked_milliseconds=5400000", nullptr, nullptr,
+            nullptr) == SQLITE_OK);
+        sqlite3_close(timerDatabase);
+        priorityQuery.minimumTrackedMinutes = 80;
+        priorityQuery.maximumTrackedMinutes = 100;
+        assert(store.searchIssues(priorityQuery).size() == 1);
+        priorityQuery.minimumTrackedMinutes = 91;
+        assert(store.searchIssues(priorityQuery).empty());
 
         const auto summary = store.saveSummaryDraft(id, "用户总结：线程池配置错误");
         assert(!summary.id.empty());
@@ -258,6 +297,55 @@ void testIssueStoreCrudAndPersistence() {
     std::filesystem::remove_all(restoredRoot);
 }
 
+void testHierarchicalGroupFiltering() {
+    const auto root = std::filesystem::temp_directory_path() /
+                      "issuetrace-group-filter-tests";
+    std::filesystem::remove_all(root);
+    {
+        issuetrace::IssueStore store(root);
+        auto parent = store.createIssue("支付域公共事项", "");
+        parent.groupName = "支付域";
+        parent.tags = "线上,超时";
+        parent.version = "v2.3";
+        parent.ticket = "INC-100";
+        store.updateIssue(parent);
+        auto child = store.createIssue("支付回调事项", "");
+        child.groupName = "支付域/回调";
+        child.tags = "线上";
+        store.updateIssue(child);
+        static_cast<void>(store.createIssue("未分组事项", ""));
+
+        issuetrace::IssueQuery query;
+        query.groupPath = "支付域";
+        assert(store.searchIssues(query).size() == 2);
+        query.groupPath = "支付域/回调";
+        assert(store.searchIssues(query).size() == 1);
+        query.groupPath = "__default__";
+        assert(store.searchIssues(query).size() == 1);
+        query.groupPath = "不存在";
+        assert(store.searchIssues(query).empty());
+        query = {};
+        query.tag = "线上";
+        assert(store.searchIssues(query).size() == 2);
+        query.tag = "线上,超时";
+        assert(store.searchIssues(query).size() == 1);
+        query = {};
+        query.version = "2.3";
+        query.ticket = "INC-1";
+        assert(store.searchIssues(query).size() == 1);
+
+        const auto updatedAt = store.findIssue(parent.id)->updatedAt;
+        store.renameIssueGroupPrefix("支付域", "核心系统/支付域");
+        assert(store.findIssue(parent.id)->groupName == "核心系统/支付域");
+        assert(store.findIssue(child.id)->groupName == "核心系统/支付域/回调");
+        assert(store.findIssue(parent.id)->updatedAt == updatedAt);
+        query = {};
+        query.groupPath = "核心系统";
+        assert(store.searchIssues(query).size() == 2);
+    }
+    std::filesystem::remove_all(root);
+}
+
 void testSchemaMigrationSafety() {
     const auto migrationRoot = std::filesystem::temp_directory_path() /
                                "issuetrace-migration-tests-中文";
@@ -268,7 +356,7 @@ void testSchemaMigrationSafety() {
     }
     {
         issuetrace::IssueStore migrated(migrationRoot);
-        assert(migrated.workspaceValue("schema_version") == "7");
+        assert(migrated.workspaceValue("schema_version") == "8");
         bool foundSnapshot = false;
         for (const auto& entry :
              std::filesystem::directory_iterator(migrationRoot / "backups")) {
@@ -317,7 +405,7 @@ void testUnversionedWorkspaceMigration() {
         assert(issue->status == "completed");
         assert(issue->statusChangedAt == 2000);
         assert(!issue->remindAt.has_value());
-        assert(migrated.workspaceValue("schema_version") == "7");
+        assert(migrated.workspaceValue("schema_version") == "8");
     }
     std::filesystem::remove_all(root);
 }
@@ -328,6 +416,7 @@ int main() {
     testSummaryRenderingPreservesManualContent();
     testXlsxExport();
     testIssueStoreCrudAndPersistence();
+    testHierarchicalGroupFiltering();
     testSchemaMigrationSafety();
     testUnversionedWorkspaceMigration();
     std::cout << "All IssueTrace core tests passed.\n";

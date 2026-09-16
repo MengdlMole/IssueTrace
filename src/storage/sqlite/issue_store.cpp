@@ -14,7 +14,7 @@
 namespace issuetrace {
 namespace {
 
-constexpr int kSchemaVersion = 7;
+constexpr int kSchemaVersion = 8;
 
 class Statement final {
 public:
@@ -117,13 +117,19 @@ StoredIssue readIssue(sqlite3_stmt* statement) {
     if (sqlite3_column_type(statement, 16) != SQLITE_NULL) {
         issue.remindAt = sqlite3_column_int64(statement, 16);
     }
+    issue.groupName = columnText(statement, 17);
+    issue.tags = columnText(statement, 18);
+    issue.trackedMilliseconds = sqlite3_column_int64(statement, 19);
+    if (sqlite3_column_type(statement, 20) != SQLITE_NULL) {
+        issue.timerStartedAt = sqlite3_column_int64(statement, 20);
+    }
     return issue;
 }
 
 constexpr const char* issueColumns =
     "id,title,original_problem,reporter,assignee,service,version,ticket,status,"
     "priority,conclusion,reported_at,resolved_at,created_at,updated_at,"
-    "status_changed_at,remind_at";
+    "status_changed_at,remind_at,group_name,tags,tracked_milliseconds,timer_started_at";
 
 void bindText(sqlite3_stmt* statement, const int index,
               const std::string& value) {
@@ -144,6 +150,7 @@ void refreshSearchDocument(sqlite3* db, const std::string& issueId) {
         "INSERT INTO issue_search(issue_id,content) "
         "SELECT i.id,i.title||' '||i.original_problem||' '||i.reporter||' '||"
         "i.assignee||' '||i.service||' '||i.version||' '||i.ticket||' '||"
+        "i.group_name||' '||i.tags||' '||"
         "i.conclusion||' '||COALESCE((SELECT group_concat(t.content_markdown,' ') "
         "FROM timeline_entries t WHERE t.issue_id=i.id AND t.deleted_at IS NULL),'')||"
         "' '||COALESCE((SELECT group_concat(a.original_name,' ') FROM attachments a "
@@ -433,6 +440,8 @@ public:
                     "conclusion TEXT NOT NULL DEFAULT '',reported_at INTEGER NOT NULL,"
                     "resolved_at INTEGER,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,"
                     "status_changed_at INTEGER NOT NULL,remind_at INTEGER,"
+                    "group_name TEXT NOT NULL DEFAULT '',tags TEXT NOT NULL DEFAULT '',"
+                    "tracked_milliseconds INTEGER NOT NULL DEFAULT 0,timer_started_at INTEGER,"
                     "deleted_at INTEGER);"
                     "CREATE INDEX IF NOT EXISTS issues_active_updated "
                     "ON issues(deleted_at,updated_at DESC);"
@@ -470,6 +479,18 @@ public:
                 if (!columnExists(db_, "issues", "remind_at")) {
                     execute(db_, "ALTER TABLE issues ADD COLUMN remind_at INTEGER;");
                 }
+                if (!columnExists(db_, "issues", "group_name")) {
+                    execute(db_, "ALTER TABLE issues ADD COLUMN group_name TEXT NOT NULL DEFAULT '';");
+                }
+                if (!columnExists(db_, "issues", "tags")) {
+                    execute(db_, "ALTER TABLE issues ADD COLUMN tags TEXT NOT NULL DEFAULT '';");
+                }
+                if (!columnExists(db_, "issues", "tracked_milliseconds")) {
+                    execute(db_, "ALTER TABLE issues ADD COLUMN tracked_milliseconds INTEGER NOT NULL DEFAULT 0;");
+                }
+                if (!columnExists(db_, "issues", "timer_started_at")) {
+                    execute(db_, "ALTER TABLE issues ADD COLUMN timer_started_at INTEGER;");
+                }
                 execute(db_,
                     "UPDATE issues SET status_changed_at=updated_at "
                     "WHERE status_changed_at IS NULL;"
@@ -478,7 +499,7 @@ public:
                     "UPDATE issues SET status='completed' "
                     "WHERE status IN('resolved','closed');");
             }
-            execute(db_, "UPDATE metadata SET value='7' WHERE key='schema_version';");
+            execute(db_, "UPDATE metadata SET value='8' WHERE key='schema_version';");
             execute(db_, "CREATE VIRTUAL TABLE IF NOT EXISTS issue_search USING "
                          "fts5(issue_id UNINDEXED,content,tokenize='trigram');");
             bool rebuildSearch = true;
@@ -544,7 +565,7 @@ const std::filesystem::path& IssueStore::workspaceRoot() const {
 
 StoredIssue IssueStore::createIssue(std::string title, std::string reporter) {
     if (title.find_first_not_of(" \t\r\n") == std::string::npos) {
-        throw std::invalid_argument("问题内容不能为空");
+        throw std::invalid_argument("事件内容不能为空");
     }
     const auto now = nowMilliseconds();
     StoredIssue issue;
@@ -608,12 +629,23 @@ std::vector<StoredIssue> IssueStore::listDeletedIssues() const {
 std::vector<StoredIssue> IssueStore::searchIssues(const IssueQuery& query) const {
     std::string orderBy = "i.updated_at DESC,i.id ASC";
     if (query.sort == "reported_desc") orderBy = "i.reported_at DESC,i.id ASC";
+    else if (query.sort == "created_desc") orderBy = "i.created_at DESC,i.id ASC";
     else if (query.sort == "priority_desc") {
         orderBy = "CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 "
                   "WHEN 'normal' THEN 2 ELSE 3 END,i.updated_at DESC,i.id ASC";
+    } else if (query.sort == "title_asc") {
+        orderBy = "i.title COLLATE NOCASE ASC,i.updated_at DESC,i.id ASC";
+    } else if (query.sort == "tracked_desc") {
+        orderBy = "i.tracked_milliseconds+CASE WHEN i.timer_started_at IS NULL "
+                  "THEN 0 ELSE MAX(0," + std::to_string(nowMilliseconds()) +
+                  "-i.timer_started_at) END DESC,i.updated_at DESC,i.id ASC";
     } else if (query.sort == "status") orderBy = "i.status ASC,i.updated_at DESC,i.id ASC";
     else if (query.sort == "service") orderBy = "i.service ASC,i.updated_at DESC,i.id ASC";
     else if (query.sort == "assignee") orderBy = "i.assignee ASC,i.updated_at DESC,i.id ASC";
+    else if (query.sort == "group") {
+        orderBy = "CASE WHEN trim(i.group_name)='' THEN 0 ELSE 1 END,"
+                  "i.group_name COLLATE NOCASE,i.updated_at DESC,i.id ASC";
+    }
     const std::string sql = std::string("SELECT ") + issueColumns +
         " FROM issues i WHERE i.deleted_at IS NULL "
         "AND (?1='' OR (?6=1 AND i.id IN(SELECT issue_id FROM issue_search "
@@ -622,7 +654,21 @@ std::vector<StoredIssue> IssueStore::searchIssues(const IssueQuery& query) const
         "AND (?3='' OR i.status=?3) "
         "AND (?4='' OR i.service LIKE '%'||?4||'%') "
         "AND (?5='' OR i.assignee LIKE '%'||?5||'%') "
-        "AND (?7=0 OR i.updated_at<=?7) ORDER BY " + orderBy;
+        "AND (?7=0 OR i.updated_at<=?7) "
+        "AND (?8='' OR i.priority=?8) "
+        "AND (?9='' OR 1=1) "
+        "AND (?10='' OR COALESCE((SELECT t.content_markdown FROM timeline_entries t "
+        "WHERE t.issue_id=i.id AND t.deleted_at IS NULL AND t.type='progress' "
+        "ORDER BY t.occurred_at DESC LIMIT 1),'') LIKE '%'||?10||'%') "
+        "AND (?11='' OR i.title LIKE '%'||?11||'%') "
+        "AND (?12=0 OR i.tracked_milliseconds+CASE WHEN i.timer_started_at IS NULL "
+        "THEN 0 ELSE MAX(0,?14-i.timer_started_at) END>=?12) "
+        "AND (?13=0 OR i.tracked_milliseconds+CASE WHEN i.timer_started_at IS NULL "
+        "THEN 0 ELSE MAX(0,?14-i.timer_started_at) END<=?13) "
+        "AND (?15='' OR (?15='__default__' AND trim(i.group_name)='') OR "
+        "i.group_name=?15 OR i.group_name LIKE ?15||'/%') "
+        "AND (?16='' OR i.version LIKE '%'||?16||'%') "
+        "AND (?17='' OR i.ticket LIKE '%'||?17||'%') ORDER BY " + orderBy;
     Statement statement(impl_->db_, sql.c_str());
     bindText(statement.get(), 1, query.text);
     bindText(statement.get(), 2, quoteFtsQuery(query.text));
@@ -635,13 +681,87 @@ std::vector<StoredIssue> IssueStore::searchIssues(const IssueQuery& query) const
         ? nowMilliseconds() - static_cast<std::int64_t>(query.staleDays) * 86400000
         : 0;
     sqlite3_bind_int64(statement.get(), 7, staleBefore);
+    bindText(statement.get(), 8, query.priority);
+    bindText(statement.get(), 9, query.tag);
+    bindText(statement.get(), 10, query.progress);
+    bindText(statement.get(), 11, query.titleText);
+    sqlite3_bind_int64(statement.get(), 12,
+        static_cast<std::int64_t>(query.minimumTrackedMinutes) * 60000);
+    sqlite3_bind_int64(statement.get(), 13,
+        static_cast<std::int64_t>(query.maximumTrackedMinutes) * 60000);
+    sqlite3_bind_int64(statement.get(), 14, nowMilliseconds());
+    bindText(statement.get(), 15, query.groupPath);
+    bindText(statement.get(), 16, query.version);
+    bindText(statement.get(), 17, query.ticket);
+    const auto selectedTags = [&query] {
+        std::vector<std::string> values;
+        std::size_t start = 0;
+        while (start <= query.tag.size()) {
+            const auto end = query.tag.find(',', start);
+            auto value = query.tag.substr(start, end == std::string::npos
+                ? std::string::npos : end - start);
+            const auto first = value.find_first_not_of(" \t\r\n");
+            const auto last = value.find_last_not_of(" \t\r\n");
+            if (first != std::string::npos) values.push_back(value.substr(first, last - first + 1));
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+        return values;
+    }();
     std::vector<StoredIssue> result;
     int step = SQLITE_ROW;
     while ((step = sqlite3_step(statement.get())) == SQLITE_ROW) {
-        result.push_back(readIssue(statement.get()));
+        auto issue = readIssue(statement.get());
+        bool includesAllTags = true;
+        for (const auto& tag : selectedTags) {
+            const auto haystack = "," + issue.tags + ",";
+            if (haystack.find("," + tag + ",") == std::string::npos) {
+                includesAllTags = false;
+                break;
+            }
+        }
+        if (includesAllTags) result.push_back(std::move(issue));
     }
     if (step != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(impl_->db_));
     return result;
+}
+
+void IssueStore::renameIssueGroupPrefix(const std::string& sourcePrefix,
+                                        const std::string& destinationPrefix) {
+    if (sourcePrefix.empty() || destinationPrefix.empty()) {
+        throw std::invalid_argument("分组路径不能为空");
+    }
+    if (destinationPrefix == sourcePrefix ||
+        destinationPrefix.starts_with(sourcePrefix + "/")) {
+        throw std::invalid_argument("不能把分组移动到自身或其子分组");
+    }
+    execute(impl_->db_, "BEGIN IMMEDIATE");
+    try {
+        Statement ids(impl_->db_,
+            "SELECT id FROM issues WHERE deleted_at IS NULL AND "
+            "(group_name=? OR group_name LIKE ?||'/%')");
+        bindText(ids.get(), 1, sourcePrefix);
+        bindText(ids.get(), 2, sourcePrefix);
+        std::vector<std::string> affected;
+        while (sqlite3_step(ids.get()) == SQLITE_ROW) {
+            affected.push_back(columnText(ids.get(), 0));
+        }
+        Statement rename(impl_->db_,
+            "UPDATE issues SET group_name=?||substr(group_name,length(?)+1) "
+            "WHERE deleted_at IS NULL AND (group_name=? OR group_name LIKE ?||'/%')");
+        bindText(rename.get(), 1, destinationPrefix);
+        bindText(rename.get(), 2, sourcePrefix);
+        bindText(rename.get(), 3, sourcePrefix);
+        bindText(rename.get(), 4, sourcePrefix);
+        if (sqlite3_step(rename.get()) != SQLITE_DONE) {
+            throw std::runtime_error(sqlite3_errmsg(impl_->db_));
+        }
+        for (const auto& id : affected) refreshSearchDocument(impl_->db_, id);
+        execute(impl_->db_, "COMMIT");
+    } catch (...) {
+        execute(impl_->db_, "ROLLBACK");
+        throw;
+    }
 }
 
 std::optional<StoredIssue> IssueStore::findIssue(const std::string& id) const {
@@ -657,18 +777,18 @@ std::optional<StoredIssue> IssueStore::findIssue(const std::string& id) const {
 
 void IssueStore::updateIssue(const StoredIssue& issue) {
     if (issue.title.find_first_not_of(" \t\r\n") == std::string::npos) {
-        throw std::invalid_argument("问题内容不能为空");
+        throw std::invalid_argument("事件内容不能为空");
     }
     execute(impl_->db_, "BEGIN IMMEDIATE");
     try {
     Statement statement(impl_->db_,
         "UPDATE issues SET title=?,original_problem=?,reporter=?,assignee=?,service=?,"
-        "version=?,ticket=?,status=?,priority=?,conclusion=?,reported_at=?,resolved_at=?,"
+        "version=?,ticket=?,status=?,priority=?,group_name=?,tags=?,conclusion=?,reported_at=?,resolved_at=?,"
         "updated_at=?,status_changed_at=?,remind_at=? WHERE id=? AND deleted_at IS NULL");
-    const std::array<const std::string*, 10> values{
+    const std::array<const std::string*, 12> values{
         &issue.title, &issue.originalProblem, &issue.reporter, &issue.assignee,
         &issue.service, &issue.version, &issue.ticket, &issue.status,
-        &issue.priority, &issue.conclusion};
+        &issue.priority, &issue.groupName, &issue.tags, &issue.conclusion};
     int index = 1;
     for (const auto* value : values) bindText(statement.get(), index++, *value);
     sqlite3_bind_int64(statement.get(), index++, issue.reportedAt);
@@ -706,6 +826,73 @@ void IssueStore::setIssueReminder(const std::string& id,
     if (sqlite3_changes(impl_->db_) != 1) {
         throw std::runtime_error("Issue does not exist");
     }
+}
+
+void IssueStore::setIssueTrackedMilliseconds(
+    const std::string& id, const std::int64_t trackedMilliseconds) {
+    if (trackedMilliseconds < 0) {
+        throw std::invalid_argument("累计处理时间不能为负数");
+    }
+    Statement statement(
+        impl_->db_,
+        "UPDATE issues SET tracked_milliseconds=? WHERE id=? AND deleted_at IS NULL "
+        "AND timer_started_at IS NULL");
+    sqlite3_bind_int64(statement.get(), 1, trackedMilliseconds);
+    bindText(statement.get(), 2, id);
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(sqlite3_errmsg(impl_->db_));
+    }
+    if (sqlite3_changes(impl_->db_) != 1) {
+        const auto issue = findIssue(id);
+        if (!issue) throw std::runtime_error("Issue does not exist");
+        if (issue->timerStartedAt) {
+            throw std::runtime_error("请先暂停计时再修改累计处理时间");
+        }
+        throw std::runtime_error("累计处理时间保存失败");
+    }
+}
+
+void IssueStore::startIssueTimer(const std::string& id) {
+    Statement statement(impl_->db_,
+        "UPDATE issues SET timer_started_at=? WHERE id=? AND deleted_at IS NULL "
+        "AND timer_started_at IS NULL");
+    sqlite3_bind_int64(statement.get(), 1, nowMilliseconds());
+    bindText(statement.get(), 2, id);
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(sqlite3_errmsg(impl_->db_));
+    }
+}
+
+void IssueStore::pauseIssueTimer(const std::string& id) {
+    const auto now = nowMilliseconds();
+    Statement statement(impl_->db_,
+        "UPDATE issues SET tracked_milliseconds=tracked_milliseconds+MAX(0,?-timer_started_at),"
+        "timer_started_at=NULL WHERE id=? AND deleted_at IS NULL AND timer_started_at IS NOT NULL");
+    sqlite3_bind_int64(statement.get(), 1, now);
+    bindText(statement.get(), 2, id);
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(sqlite3_errmsg(impl_->db_));
+    }
+}
+
+namespace {
+std::vector<std::string> distinctIssueValues(sqlite3* db, const char* column) {
+    const std::string sql = std::string("SELECT DISTINCT trim(") + column +
+        ") FROM issues WHERE deleted_at IS NULL AND trim(" + column +
+        ")<>'' ORDER BY trim(" + column + ") COLLATE NOCASE";
+    Statement statement(db, sql.c_str());
+    std::vector<std::string> values;
+    while (sqlite3_step(statement.get()) == SQLITE_ROW) values.push_back(columnText(statement.get(), 0));
+    return values;
+}
+}
+
+std::vector<std::string> IssueStore::distinctServices() const {
+    return distinctIssueValues(impl_->db_, "service");
+}
+
+std::vector<std::string> IssueStore::distinctVersions() const {
+    return distinctIssueValues(impl_->db_, "version");
 }
 
 void IssueStore::softDeleteIssue(const std::string& id) {
@@ -800,7 +987,8 @@ std::vector<TimelineEntry> IssueStore::listTimelineEntries(
     const std::string& issueId) const {
     Statement statement(impl_->db_,
         "SELECT id,issue_id,type,content_markdown,occurred_at,created_at,updated_at "
-        "FROM timeline_entries WHERE issue_id=? AND deleted_at IS NULL "
+                            "FROM timeline_entries WHERE issue_id=? AND deleted_at IS NULL "
+                            "AND type<>'_description_attachment' "
         "ORDER BY occurred_at DESC,rowid DESC");
     bindText(statement.get(), 1, issueId);
     std::vector<TimelineEntry> result;
@@ -995,6 +1183,30 @@ std::vector<Attachment> IssueStore::listAttachments(
         attachment.sha256 = columnText(statement.get(), 6);
         attachment.createdAt = sqlite3_column_int64(statement.get(), 7);
         result.push_back(std::move(attachment));
+    }
+    return result;
+}
+
+std::vector<Attachment> IssueStore::listDescriptionAttachments(
+    const std::string& issueId) const {
+    Statement statement(impl_->db_,
+        "SELECT a.id,a.timeline_entry_id,a.relative_path,a.original_name,a.mime_type,"
+        "a.byte_size,a.sha256,a.created_at FROM attachments a JOIN timeline_entries t "
+        "ON t.id=a.timeline_entry_id WHERE t.issue_id=? AND t.type='_description_attachment' "
+        "AND t.deleted_at IS NULL AND a.deleted_at IS NULL ORDER BY a.created_at,a.id");
+    bindText(statement.get(), 1, issueId);
+    std::vector<Attachment> result;
+    while (sqlite3_step(statement.get()) == SQLITE_ROW) {
+        Attachment value;
+        value.id = columnText(statement.get(), 0);
+        value.timelineEntryId = columnText(statement.get(), 1);
+        value.relativePath = columnText(statement.get(), 2);
+        value.originalName = columnText(statement.get(), 3);
+        value.mimeType = columnText(statement.get(), 4);
+        value.byteSize = sqlite3_column_int64(statement.get(), 5);
+        value.sha256 = columnText(statement.get(), 6);
+        value.createdAt = sqlite3_column_int64(statement.get(), 7);
+        result.push_back(std::move(value));
     }
     return result;
 }

@@ -66,6 +66,11 @@ int main() {
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a};
     const auto attachment = store.addAttachment(
         timeline.id, "现场截图.png", "image/png", "test-sha256", pngHeader);
+    const auto descriptionEntry = store.createTimelineEntry(
+        issue.id, "_description_attachment", "事件描述图片");
+    const auto descriptionAttachment = store.addAttachment(
+        descriptionEntry.id, "原始反馈.png", "image/png", "description-sha256", pngHeader);
+    assert(store.listTimelineEntries(issue.id).size() == 1);
 
     QFile formFile(QStringLiteral(ISSUETRACE_DEFAULT_FORM_PATH));
     QFile summaryFile(QStringLiteral(ISSUETRACE_DEFAULT_SUMMARY_PATH));
@@ -76,26 +81,36 @@ int main() {
 
     const auto markdownFolder = IssueExportService::exportMarkdown(
         store, *store.findIssue(issue.id), form, summaryTemplate, output);
-    assert(markdownFolder.filename() == "BUG-42-支付_回调超时");
-    assert(std::filesystem::is_regular_file(markdownFolder / "问题记录.md"));
-    assert(std::filesystem::is_regular_file(markdownFolder / "问题总结.md"));
+    assert(markdownFolder.filename().string().ends_with(" BUG-42-支付_回调超时"));
+    assert(markdownFolder.filename().string().substr(0, 10).find_first_not_of("0123456789") == std::string::npos);
+    assert(std::filesystem::is_regular_file(markdownFolder / "事件记录.md"));
+    assert(std::filesystem::is_regular_file(markdownFolder / "事件总结.md"));
     const auto exportedAttachmentName =
         std::filesystem::path(attachment.relativePath).filename();
     assert(std::filesystem::is_regular_file(
         markdownFolder / "图片" / exportedAttachmentName));
+    const auto descriptionAttachmentName =
+        std::filesystem::path(descriptionAttachment.relativePath).filename();
+    assert(std::filesystem::is_regular_file(
+        markdownFolder / "图片" / descriptionAttachmentName));
 
-    const auto record = readText(markdownFolder / "问题记录.md");
-    const auto summary = readText(markdownFolder / "问题总结.md");
+    const auto record = readText(markdownFolder / "事件记录.md");
+    const auto summary = readText(markdownFolder / "事件总结.md");
     assert(record.find("支付/回调超时") != std::string::npos);
     assert(record.find("状态：处理中") != std::string::npos);
     assert(record.find("发现连接池等待时间明显升高") != std::string::npos);
     assert(record.find("![现场截图.png](图片/" +
                        exportedAttachmentName.generic_string() + ")") !=
            std::string::npos);
-    assert(summary.find("上游连接池容量不足") != std::string::npos);
-    assert(summary.find("[现场截图.png](图片/" +
-                        exportedAttachmentName.generic_string() + ")") !=
+    assert(record.find("![原始反馈.png](图片/" +
+                       descriptionAttachmentName.generic_string() + ")") !=
            std::string::npos);
+    assert(summary.find("事件处理的关键步骤和操作") != std::string::npos);
+    assert(summary.find("验证和遗留问题") != std::string::npos);
+    assert(summary.find("验证环境、验证方法、验证结果") != std::string::npos);
+    assert(summary.find("上游连接池容量不足") == std::string::npos);
+    assert(summary.find("发现连接池等待时间明显升高") == std::string::npos);
+    assert(summary.find("现场截图.png") == std::string::npos);
     assert(rejects([&] {
         static_cast<void>(IssueExportService::exportMarkdown(
             store, issue, form, summaryTemplate, output));

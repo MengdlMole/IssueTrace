@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "default-issue",
   "version": 1,
-  "name": "默认问题表单",
+  "name": "默认事件表单",
   "fields": [
     {
       "id": "title",
-      "label": "问题",
+      "label": "事件",
       "type": "multiline_text",
       "required": true,
       "default": null,
@@ -14,7 +14,7 @@
     },
     {
       "id": "original_problem",
-      "label": "问题原话",
+      "label": "事件描述",
       "type": "multiline_text",
       "required": false,
       "default": null,
@@ -22,7 +22,7 @@
     },
     {
       "id": "reporter",
-      "label": "问题提出人",
+      "label": "事件提出人",
       "type": "person",
       "required": false,
       "default": null,
@@ -47,22 +47,22 @@
     {
       "id": "service",
       "label": "服务",
-      "type": "text",
+      "type": "history_select",
       "required": false,
       "default": null,
       "placements": {"detail": true, "xlsx": true}
     },
     {
       "id": "version",
-      "label": "问题版本",
-      "type": "text",
+      "label": "版本号",
+      "type": "history_select",
       "required": false,
       "default": null,
       "placements": {"detail": true, "xlsx": true}
     },
     {
       "id": "ticket",
-      "label": "问题单",
+      "label": "跟踪单",
       "type": "text",
       "required": false,
       "default": null,
@@ -70,7 +70,7 @@
     },
     {
       "id": "status",
-      "label": "问题状态",
+      "label": "事件状态",
       "type": "select",
       "required": true,
       "default": "pending",
@@ -97,8 +97,24 @@
       "placements": {"detail": true, "xlsx": true}
     },
     {
+      "id": "group_name",
+      "label": "分组",
+      "type": "text",
+      "required": false,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
+      "id": "tags",
+      "label": "标签",
+      "type": "text",
+      "required": false,
+      "default": null,
+      "placements": {"detail": true, "xlsx": true}
+    },
+    {
       "id": "progress",
-      "label": "问题进展",
+      "label": "事件进展",
       "type": "timeline_summary",
       "required": false,
       "readOnly": true,
@@ -107,7 +123,7 @@
     },
     {
       "id": "conclusion",
-      "label": "问题结论",
+      "label": "事件结论",
       "type": "multiline_text",
       "required": false,
       "default": null,

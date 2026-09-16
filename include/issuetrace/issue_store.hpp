@@ -21,6 +21,8 @@ struct StoredIssue {
     std::string ticket;
     std::string status{"pending"};
     std::string priority{"normal"};
+    std::string groupName;
+    std::string tags;
     std::string conclusion;
     std::int64_t reportedAt{};
     std::optional<std::int64_t> resolvedAt;
@@ -28,6 +30,8 @@ struct StoredIssue {
     std::int64_t updatedAt{};
     std::int64_t statusChangedAt{};
     std::optional<std::int64_t> remindAt;
+    std::int64_t trackedMilliseconds{};
+    std::optional<std::int64_t> timerStartedAt;
 };
 
 struct TimelineEntry {
@@ -58,6 +62,15 @@ struct IssueQuery {
     std::string assignee;
     std::string sort{"updated_desc"};
     int staleDays{};
+    std::string priority;
+    std::string tag;
+    std::string progress;
+    std::string titleText;
+    int minimumTrackedMinutes{};
+    int maximumTrackedMinutes{};
+    std::string groupPath;
+    std::string version;
+    std::string ticket;
 };
 
 struct SummaryDraft {
@@ -95,8 +108,16 @@ public:
     [[nodiscard]] std::optional<StoredIssue> findIssue(
         const std::string& id) const;
     void updateIssue(const StoredIssue& issue);
+    void renameIssueGroupPrefix(const std::string& sourcePrefix,
+                                const std::string& destinationPrefix);
     void setIssueReminder(const std::string& id,
                           std::optional<std::int64_t> remindAt);
+    void setIssueTrackedMilliseconds(const std::string& id,
+                                     std::int64_t trackedMilliseconds);
+    void startIssueTimer(const std::string& id);
+    void pauseIssueTimer(const std::string& id);
+    [[nodiscard]] std::vector<std::string> distinctServices() const;
+    [[nodiscard]] std::vector<std::string> distinctVersions() const;
     void softDeleteIssue(const std::string& id);
     void restoreIssue(const std::string& id);
     [[nodiscard]] TimelineEntry createTimelineEntry(
@@ -113,6 +134,8 @@ public:
         std::span<const unsigned char> content);
     [[nodiscard]] std::vector<Attachment> listAttachments(
         const std::string& timelineEntryId) const;
+    [[nodiscard]] std::vector<Attachment> listDescriptionAttachments(
+        const std::string& issueId) const;
     void softDeleteAttachment(const std::string& id);
     [[nodiscard]] std::optional<std::string> workspaceValue(
         const std::string& key) const;

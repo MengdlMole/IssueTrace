@@ -38,32 +38,35 @@ Frame {
 
     ColumnLayout {
         anchors.fill: parent
-        TextArea {
-            id: timelineInput
+        ScrollView {
             Layout.fillWidth: true
-            implicitHeight: 96
-            wrapMode: TextEdit.Wrap
-            placeholderText: "随手记下发现、进展或下一步；可粘贴截图、拖入日志和附件"
-            onTextChanged: draftSaveTimer.restart()
-            Keys.onPressed: function(event) {
-                if ((event.modifiers & (Qt.ControlModifier | Qt.MetaModifier)) &&
-                        (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
-                    root.submit((event.modifiers & Qt.ShiftModifier) !== 0)
-                    event.accepted = true
-                } else if (event.matches(StandardKey.Paste) && controller.clipboardHasImage()) {
-                    if (controller.addTimelineEntryWithClipboardImage(timelineType.currentValue, text)) {
-                        clear()
-                        forceActiveFocus()
+            Layout.preferredHeight: 120
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+            TextArea {
+                id: timelineInput
+                wrapMode: TextEdit.Wrap
+                placeholderText: "随手记下发现、进展或下一步；可粘贴截图、拖入日志和附件"
+                onTextChanged: draftSaveTimer.restart()
+                Keys.onPressed: function(event) {
+                    if ((event.modifiers & (Qt.ControlModifier | Qt.MetaModifier)) &&
+                            (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+                        root.submit((event.modifiers & Qt.ShiftModifier) !== 0)
+                        event.accepted = true
+                    } else if (event.matches(StandardKey.Paste) && controller.clipboardHasImage()) {
+                        if (controller.addTimelineEntryWithClipboardImage(timelineType.currentValue, text)) {
+                            clear()
+                            forceActiveFocus()
+                        }
+                        event.accepted = true
                     }
-                    event.accepted = true
                 }
-            }
-            DropArea {
-                anchors.fill: parent
-                onDropped: function(drop) {
-                    if (drop.hasUrls && controller.addTimelineEntryWithFiles(
-                            timelineType.currentValue, timelineInput.text, drop.urls)) {
-                        timelineInput.clear()
+                DropArea {
+                    anchors.fill: parent
+                    onDropped: function(drop) {
+                        if (drop.hasUrls && controller.addTimelineEntryWithFiles(
+                                timelineType.currentValue, timelineInput.text, drop.urls)) {
+                            timelineInput.clear()
+                        }
                     }
                 }
             }

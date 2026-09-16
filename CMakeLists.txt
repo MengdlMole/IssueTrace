@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(IssueTrace VERSION 0.4.0 LANGUAGES C CXX)
+project(IssueTrace VERSION 0.5.0 LANGUAGES C CXX)
 
 # Placeholder identity for development archives. A stable release must override
 # this with an identifier controlled by the publisher.
@@ -206,6 +206,7 @@ if(ISSUETRACE_BUILD_DESKTOP)
             qml/Main.qml
             qml/IssueDetailsDialog.qml
             qml/IssueInbox.qml
+            qml/IssueEditorList.qml
             qml/TimelineComposer.qml
             qml/TimelineList.qml
     )
@@ -276,6 +277,27 @@ if(ISSUETRACE_BUILD_DESKTOP)
                 $<TARGET_FILE:IssueTrace> --verify-custom-reminder
         )
         set_tests_properties(issuetrace_custom_reminder_smoke PROPERTIES TIMEOUT 15)
+        add_test(NAME issuetrace_description_image_smoke
+            COMMAND "${CMAKE_COMMAND}" -E env
+                QT_QPA_PLATFORM=offscreen
+                ISSUETRACE_WORKSPACE=${CMAKE_CURRENT_BINARY_DIR}/description-image-workspace
+                $<TARGET_FILE:IssueTrace> --verify-description-image
+        )
+        set_tests_properties(issuetrace_description_image_smoke PROPERTIES TIMEOUT 15)
+        add_test(NAME issuetrace_tracked_duration_edit_smoke
+            COMMAND "${CMAKE_COMMAND}" -E env
+                QT_QPA_PLATFORM=offscreen
+                ISSUETRACE_WORKSPACE=${CMAKE_CURRENT_BINARY_DIR}/tracked-duration-workspace
+                $<TARGET_FILE:IssueTrace> --verify-tracked-duration-edit
+        )
+        set_tests_properties(issuetrace_tracked_duration_edit_smoke PROPERTIES TIMEOUT 15)
+        add_test(NAME issuetrace_two_pane_navigation_smoke
+            COMMAND "${CMAKE_COMMAND}" -E env
+                QT_QPA_PLATFORM=offscreen
+                ISSUETRACE_WORKSPACE=${CMAKE_CURRENT_BINARY_DIR}/two-pane-navigation-workspace
+                $<TARGET_FILE:IssueTrace> --verify-two-pane-navigation
+        )
+        set_tests_properties(issuetrace_two_pane_navigation_smoke PROPERTIES TIMEOUT 15)
     endif()
     if(WIN32)
         set(issuetrace_runtime_destination ".")

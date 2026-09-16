@@ -24,7 +24,7 @@ int main() {
     assert(file.open(QIODevice::ReadOnly));
     const auto definition = parseFormTemplate(file.readAll());
     assert(definition.id == QStringLiteral("default-issue"));
-    assert(definition.fields.size() == 13);
+    assert(definition.fields.size() == 15);
     assert(definition.fields.front().toMap().value(QStringLiteral("id")) ==
            QStringLiteral("title"));
     assert(definition.fields.front().toMap().value(QStringLiteral("xlsxVisible")).toBool());

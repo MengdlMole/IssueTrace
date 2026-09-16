@@ -1,44 +1,36 @@
 ---
-问题编号: "{{issue.ticket}}"
-问题状态: "{{issue.status}}"
+跟踪单: "{{issue.ticket}}"
+事件状态: "{{issue.status}}"
 服务: "{{issue.service}}"
 版本: "{{issue.version}}"
 处理人: "{{issue.assignee}}"
-问题提出人: "{{issue.reporter}}"
+事件提出人: "{{issue.reporter}}"
 提出时间: "{{issue.reported_at}}"
 解决时间: "{{issue.resolved_at}}"
 ---
 
 # {{issue.title}}
 
-## 一、问题背景
+## 一、事件概述
 
 {{issue.original_problem}}
 
-## 二、处理过程
+## 二、事件处理
 
-<!-- issuetrace:auto:timeline:start -->
-{{timeline}}
-<!-- issuetrace:auto:timeline:end -->
+<!-- 请自行补充事件处理的关键步骤和操作，例如数据排查、日志分析、代码路径和定位过程。 -->
 
-## 三、问题定位
+## 三、事件解决
 
-<!-- 在此补充直接原因、根本原因和触发条件。 -->
+<!-- 请自行补充事件的解决方案、处理结果和最终结论。 -->
 
-## 四、解决方案
+## 四、验证和遗留问题
 
-<!-- 在此补充临时处理、正式修复和变更内容。 -->
+<!-- 请自行补充验证环境、验证方法、验证结果、遗留风险和后续跟踪事项。 -->
 
-## 五、验证结果
+## 五、后续建议
 
-<!-- 在此补充验证环境、方法、结果和遗留风险。 -->
+<!-- 请补充预防措施、监控改进、代码或流程建议。 -->
 
-## 六、问题结论
+## 六、相关附件
 
-{{issue.conclusion}}
-
-## 七、附件
-
-<!-- issuetrace:auto:attachments:start -->
-{{attachments}}
-<!-- issuetrace:auto:attachments:end -->
+<!-- 按需从“事件记录.md”引用真正需要放入总结的图片或附件，不自动复制全部证据。 -->

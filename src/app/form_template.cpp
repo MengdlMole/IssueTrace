@@ -26,18 +26,20 @@ FormTemplateDefinition parseFormTemplate(const QByteArray& json) {
     const QSet<QString> allowedTypes{QStringLiteral("text"),
         QStringLiteral("multiline_text"), QStringLiteral("person"),
         QStringLiteral("datetime"), QStringLiteral("select"),
-        QStringLiteral("timeline_summary")};
+        QStringLiteral("timeline_summary"), QStringLiteral("history_select")};
     const QHash<QString, QString> expectedFields{
         {QStringLiteral("title"), QStringLiteral("multiline_text")},
         {QStringLiteral("original_problem"), QStringLiteral("multiline_text")},
         {QStringLiteral("reporter"), QStringLiteral("person")},
         {QStringLiteral("reported_at"), QStringLiteral("datetime")},
         {QStringLiteral("assignee"), QStringLiteral("person")},
-        {QStringLiteral("service"), QStringLiteral("text")},
-        {QStringLiteral("version"), QStringLiteral("text")},
+        {QStringLiteral("service"), QStringLiteral("history_select")},
+        {QStringLiteral("version"), QStringLiteral("history_select")},
         {QStringLiteral("ticket"), QStringLiteral("text")},
         {QStringLiteral("status"), QStringLiteral("select")},
         {QStringLiteral("priority"), QStringLiteral("select")},
+        {QStringLiteral("group_name"), QStringLiteral("text")},
+        {QStringLiteral("tags"), QStringLiteral("text")},
         {QStringLiteral("progress"), QStringLiteral("timeline_summary")},
         {QStringLiteral("conclusion"), QStringLiteral("multiline_text")},
         {QStringLiteral("resolved_at"), QStringLiteral("datetime")}};

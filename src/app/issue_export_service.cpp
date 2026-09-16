@@ -95,6 +95,8 @@ issuetrace::XlsxCell xlsxCell(const QVariantMap& field,
     if (id == QStringLiteral("priority")) {
         return {optionLabel(field, issue.priority).toUtf8().toStdString(), {}};
     }
+    if (id == QStringLiteral("group_name")) return {issue.groupName, {}};
+    if (id == QStringLiteral("tags")) return {issue.tags, {}};
     if (id == QStringLiteral("progress")) return {store.currentProgress(issue.id), {}};
     if (id == QStringLiteral("conclusion")) return {issue.conclusion, {}};
     return {};
@@ -119,7 +121,7 @@ std::string formatTime(const std::int64_t value) {
         .toUtf8().toStdString();
 }
 
-std::string renderSummary(issuetrace::IssueStore& store,
+std::string renderSummary(issuetrace::IssueStore&,
                           const issuetrace::StoredIssue& issue,
                           const FormTemplateDefinition& form,
                           const QByteArray& summaryTemplate) {
@@ -139,24 +141,8 @@ std::string renderSummary(issuetrace::IssueStore& store,
     context.createdAt = formatTime(generatedAt);
     context.updatedAt = formatTime(generatedAt);
 
-    std::ostringstream timeline;
-    std::ostringstream attachments;
-    const auto entries = store.listTimelineEntries(issue.id);
-    for (auto iterator = entries.rbegin(); iterator != entries.rend(); ++iterator) {
-        timeline << "### " << formatTime(iterator->occurredAt) << " · "
-                 << timelineTypeLabel(iterator->type).toUtf8().toStdString()
-                 << "\n\n" << iterator->contentMarkdown << "\n\n";
-        for (const auto& attachment : store.listAttachments(iterator->id)) {
-            const auto filename = std::filesystem::path(attachment.relativePath)
-                                      .filename().generic_string();
-            const auto directory = attachment.mimeType.starts_with("image/")
-                ? std::string("图片") : std::string("附件");
-            attachments << "- [" << attachment.originalName << "](" << directory
-                        << "/" << filename << ")\n";
-        }
-    }
-    context.timelineMarkdown = timeline.str();
-    context.attachmentsMarkdown = attachments.str();
+    context.timelineMarkdown.clear();
+    context.attachmentsMarkdown.clear();
     return issuetrace::renderSummaryMarkdown(summaryTemplate.toStdString(), context);
 }
 
@@ -175,7 +161,9 @@ std::filesystem::path IssueExportService::exportMarkdown(
     const QByteArray& summaryTemplate,
     const std::filesystem::path& destinationRoot) {
     if (summaryTemplate.isEmpty()) throw std::runtime_error("总结模板为空");
-    const auto folderName = safeExportName(
+    const auto creationPrefix = QDateTime::fromMSecsSinceEpoch(issue.createdAt)
+        .toString(QStringLiteral("yyyyMMddHH")).toUtf8().toStdString();
+    const auto folderName = safeExportName(creationPrefix + " " +
         (issue.ticket.empty() ? std::string{} : issue.ticket + "-") + issue.title);
     const auto target = destinationRoot / folderName;
     if (std::filesystem::exists(target)) {
@@ -189,14 +177,23 @@ std::filesystem::path IssueExportService::exportMarkdown(
 
         std::ostringstream record;
         record << "# " << issue.title << "\n\n"
-               << "- 问题单：" << issue.ticket << "\n"
+               << "- 跟踪单：" << issue.ticket << "\n"
                << "- 状态：" << templateOptionValue(form.fields, "status", issue.status) << "\n"
                << "- 服务：" << issue.service << "\n"
                << "- 版本：" << issue.version << "\n"
                << "- 提出人：" << issue.reporter << "\n"
                << "- 处理人：" << issue.assignee << "\n\n"
-               << "## 问题原话\n\n" << issue.originalProblem << "\n\n"
-               << "## 处理记录\n\n";
+               << "- 分组：" << issue.groupName << "\n"
+               << "- 标签：" << issue.tags << "\n\n"
+               << "## 事件描述\n\n" << issue.originalProblem << "\n\n";
+        for (const auto& attachment : store.listDescriptionAttachments(issue.id)) {
+            const auto relative = std::filesystem::path(attachment.relativePath);
+            std::filesystem::copy_file(store.workspaceRoot() / relative,
+                                       temporary / "图片" / relative.filename());
+            record << "![" << attachment.originalName << "](图片/"
+                   << relative.filename().generic_string() << ")\n\n";
+        }
+        record << "## 事件记录\n\n";
         const auto entries = store.listTimelineEntries(issue.id);
         for (auto iterator = entries.rbegin(); iterator != entries.rend(); ++iterator) {
             record << "### " << formatTime(iterator->occurredAt) << " · "
@@ -214,8 +211,8 @@ std::filesystem::path IssueExportService::exportMarkdown(
                        << attachment.originalName << "](" << link << ")\n\n";
             }
         }
-        writeText(temporary / "问题记录.md", record.str());
-        writeText(temporary / "问题总结.md",
+        writeText(temporary / "事件记录.md", record.str());
+        writeText(temporary / "事件总结.md",
                   renderSummary(store, issue, form, summaryTemplate));
         std::filesystem::rename(temporary, target);
         return target;

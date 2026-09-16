@@ -9,6 +9,7 @@
 #include <QQuickWindow>
 #include <QSaveFile>
 #include <QTextStream>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QSystemTrayIcon>
 #include <QMenu>
@@ -70,7 +71,7 @@ int main(int argc, char* argv[]) {
         menu->addSeparator();
         menu->addAction(QStringLiteral("退出"), &app, &QCoreApplication::quit);
         tray->setContextMenu(menu);
-        tray->setToolTip(QStringLiteral("IssueTrace 问题提醒"));
+        tray->setToolTip(QStringLiteral("IssueTrace 事件提醒"));
         QObject::connect(tray.get(), &QSystemTrayIcon::activated, window,
             [window](QSystemTrayIcon::ActivationReason reason) {
                 if (reason == QSystemTrayIcon::Trigger ||
@@ -100,7 +101,7 @@ int main(int argc, char* argv[]) {
         for (int index = 1; index <= 30; ++index) {
             controller.addTimelineEntry(
                 QStringLiteral("note"),
-                QStringLiteral("滚动验证记录 %1：用于确认较长的问题处理过程仍可上下滚动。")
+                QStringLiteral("滚动验证记录 %1：用于确认较长的事件处理过程仍可上下滚动。")
                     .arg(index));
         }
         QTimer::singleShot(100, &app, [&app, window] {
@@ -187,6 +188,216 @@ int main(int argc, char* argv[]) {
             return 5;
         }
         QTimer::singleShot(0, &app, &QCoreApplication::quit);
+    }
+    if (arguments.contains(QStringLiteral("--verify-description-image"))) {
+        controller.createQuickIssue(QStringLiteral("事件描述图片验证"), QString{});
+        auto* details = window->findChild<QObject*>(QStringLiteral("eventDetailsDialog"));
+        const auto opened = details && QMetaObject::invokeMethod(details, "open");
+        auto temporary = std::make_shared<QTemporaryDir>();
+        const auto imagePath = temporary->filePath(QStringLiteral("描述图片.png"));
+        QImage image(8, 8, QImage::Format_ARGB32);
+        image.fill(Qt::blue);
+        const auto imageSaved = image.save(imagePath);
+        QTimer::singleShot(150, &app,
+            [&app, window, &controller, opened, imageSaved, imagePath, temporary] {
+                const auto* chooseButton = window->findChild<QObject*>(
+                    QStringLiteral("descriptionChooseImageButton"));
+                const auto added = imageSaved && controller.addDescriptionImage(
+                    QUrl::fromLocalFile(imagePath));
+                const auto projected = controller.descriptionAttachments();
+                if (!opened || !chooseButton || !chooseButton->property("visible").toBool() ||
+                    !added || projected.size() != 1) {
+                    QTextStream(stderr)
+                        << "IssueTrace description image check failed: opened=" << opened
+                        << ", button=" << (chooseButton != nullptr)
+                        << ", imageSaved=" << imageSaved << ", added=" << added
+                        << ", projected=" << projected.size() << '\n';
+                    app.exit(6);
+                    return;
+                }
+                app.exit(0);
+            });
+    }
+    if (arguments.contains(QStringLiteral("--verify-tracked-duration-edit"))) {
+        controller.createQuickIssue(QStringLiteral("计时修正验证"), QString{});
+        const auto saved = controller.setSelectedIssueTrackedDuration(2, 15);
+        const auto exactDuration = controller.selectedIssue()
+                                       .value(QStringLiteral("trackedMilliseconds"))
+                                       .toLongLong() == 8'100'000;
+        const auto started = controller.startSelectedIssueTimer();
+        const auto runningEditRejected =
+            !controller.setSelectedIssueTrackedDuration(3, 0);
+        QTimer::singleShot(30, &app,
+            [&app, window, &controller, saved, exactDuration, started,
+             runningEditRejected] {
+                const auto paused = controller.pauseSelectedIssueTimer();
+                const auto accumulatedFromEditedBase = controller.selectedIssue()
+                    .value(QStringLiteral("trackedMilliseconds")).toLongLong() >
+                    8'100'000;
+                auto* details = window->findChild<QObject*>(
+                    QStringLiteral("eventDetailsDialog"));
+                const auto opened = details && QMetaObject::invokeMethod(details, "open");
+                QTimer::singleShot(150, &app,
+                    [&app, window, saved, exactDuration, started,
+                     runningEditRejected, paused, accumulatedFromEditedBase,
+                     opened] {
+                const auto* heading = window->findChild<QObject*>(
+                    QStringLiteral("managementEventHeading"));
+                const auto* hours = window->findChild<QObject*>(
+                    QStringLiteral("trackedHoursEditor"));
+                const auto* minutes = window->findChild<QObject*>(
+                    QStringLiteral("trackedMinutesEditor"));
+                const auto* saveButton = window->findChild<QObject*>(
+                    QStringLiteral("saveTrackedDurationButton"));
+                const auto valid = saved && exactDuration && started &&
+                    runningEditRejected && paused && accumulatedFromEditedBase &&
+                    opened && heading && hours && minutes && saveButton &&
+                    heading->property("text").toString() == QStringLiteral("事件") &&
+                    hours->property("value").toInt() == 2 &&
+                    minutes->property("value").toInt() == 15 &&
+                    saveButton->property("enabled").toBool();
+                if (!valid) {
+                    QTextStream(stderr)
+                        << "IssueTrace tracked duration edit check failed: saved="
+                        << saved << ", exact=" << exactDuration
+                        << ", started=" << started
+                        << ", runningRejected=" << runningEditRejected
+                        << ", paused=" << paused
+                        << ", accumulated=" << accumulatedFromEditedBase
+                        << ", opened=" << opened
+                        << ", heading=" << (heading != nullptr)
+                        << ", hours=" << (hours ? hours->property("value").toInt() : -1)
+                        << ", minutes="
+                        << (minutes ? minutes->property("value").toInt() : -1)
+                        << ", button=" << (saveButton != nullptr) << '\n';
+                    app.exit(8);
+                    return;
+                }
+                app.exit(0);
+                    });
+            });
+    }
+    if (arguments.contains(QStringLiteral("--verify-two-pane-navigation"))) {
+        const auto token = QString::number(QCoreApplication::applicationPid());
+        const auto sourceParent = QStringLiteral("支付域-") + token;
+        const auto targetGroup = QStringLiteral("目标域-") + token;
+        const auto movedParent = targetGroup + QStringLiteral("/") + sourceParent;
+        controller.createQuickIssue(QStringLiteral("支付域事件"), QString{});
+        auto grouped = controller.selectedIssue();
+        grouped.insert(QStringLiteral("group_name"), sourceParent + QStringLiteral("/回调"));
+        grouped.insert(QStringLiteral("tags"), QStringLiteral("线上,超时"));
+        grouped.insert(QStringLiteral("service"), QStringLiteral("支付服务"));
+        grouped.insert(QStringLiteral("version"), QStringLiteral("v2.3"));
+        grouped.insert(QStringLiteral("ticket"), QStringLiteral("INC-100"));
+        const auto groupedSaved = controller.saveIssue(grouped);
+        controller.createQuickIssue(QStringLiteral("目标域事件"), QString{});
+        auto target = controller.selectedIssue();
+        target.insert(QStringLiteral("group_name"), targetGroup);
+        const auto targetSaved = controller.saveIssue(target);
+        const auto sortPeer = QStringLiteral("排序参照-") + token;
+        controller.createQuickIssue(QStringLiteral("排序参照事件"), QString{});
+        auto peer = controller.selectedIssue();
+        peer.insert(QStringLiteral("group_name"), sortPeer);
+        const auto peerSaved = controller.saveIssue(peer);
+        const auto defaultCreated = controller.createQuickIssue(
+            QStringLiteral("默认分组事件"), QString{});
+        const auto groupMoved = controller.moveIssueGroup(
+            sourceParent, targetGroup, QStringLiteral("child"));
+        const auto groupSortedAfter = controller.moveIssueGroup(
+            targetGroup, sortPeer, QStringLiteral("after"));
+        bool afterPlacementWorked = false;
+        {
+            int targetIndex = -1;
+            int peerIndex = -1;
+            int index = 0;
+            for (const auto& value : controller.issueGroups()) {
+                const auto path = value.toMap().value(QStringLiteral("path")).toString();
+                if (path == targetGroup) targetIndex = index;
+                if (path == sortPeer) peerIndex = index;
+                ++index;
+            }
+            afterPlacementWorked = targetIndex > peerIndex && peerIndex >= 0;
+        }
+        const auto groupSortedBefore = controller.moveIssueGroup(
+            targetGroup, sortPeer, QStringLiteral("before"));
+        controller.filterIssues(QStringLiteral("支付域事件"), QString{},
+                                QStringLiteral("支付服务"), QString{},
+                                QStringLiteral("updated_desc"), 0, QString{},
+                                QStringLiteral("线上,超时"), QString{}, 0, 0, movedParent,
+                                QStringLiteral("2.3"), QStringLiteral("INC-1"));
+        QTimer::singleShot(100, &app,
+            [&app, window, &controller, groupedSaved, targetSaved, peerSaved,
+             defaultCreated, groupMoved, groupSortedAfter, groupSortedBefore,
+             movedParent, targetGroup, sortPeer, afterPlacementWorked] {
+                const auto* editorList = window->findChild<QObject*>(
+                    QStringLiteral("issueEditorList"));
+                const auto* inbox = window->findChild<QObject*>(
+                    QStringLiteral("issueInbox"));
+                auto* managementTab = window->findChild<QObject*>(
+                    QStringLiteral("managementTab"));
+                auto* recordTab = window->findChild<QObject*>(
+                    QStringLiteral("recordTab"));
+                auto* navigationTabs = window->findChild<QObject*>(
+                    QStringLiteral("mainNavigationTabs"));
+                bool hasParentGroup = false;
+                bool hasChildGroup = false;
+                bool hasDefaultGroup = false;
+                int targetGroupIndex = -1;
+                int sortPeerIndex = -1;
+                int groupIndex = 0;
+                for (const auto& value : controller.issueGroups()) {
+                    const auto group = value.toMap();
+                    const auto path = group.value(QStringLiteral("path")).toString();
+                    hasParentGroup = hasParentGroup || path == movedParent;
+                    hasChildGroup = hasChildGroup ||
+                        path == movedParent + QStringLiteral("/回调");
+                    hasDefaultGroup = hasDefaultGroup ||
+                        (path == QStringLiteral("__default__") &&
+                         group.value(QStringLiteral("count")).toInt() >= 1);
+                    if (path == targetGroup) targetGroupIndex = groupIndex;
+                    if (path == sortPeer) sortPeerIndex = groupIndex;
+                    ++groupIndex;
+                }
+                const auto beforePlacementWorked = targetGroupIndex >= 0 &&
+                    targetGroupIndex < sortPeerIndex;
+                const auto hasMovableDragProxy = inbox &&
+                    inbox->property("groupDragUsesMovableProxy").toBool();
+                const auto openedRecord = recordTab &&
+                    QMetaObject::invokeMethod(recordTab, "activate");
+                const auto recordExclusive = openedRecord && managementTab &&
+                    !managementTab->property("checked").toBool() &&
+                    recordTab->property("checked").toBool();
+                const auto openedManagement = managementTab &&
+                    QMetaObject::invokeMethod(managementTab, "activate");
+                const auto managementExclusive = openedManagement && navigationTabs &&
+                    managementTab->property("checked").toBool() &&
+                    !recordTab->property("checked").toBool() &&
+                    navigationTabs->property("currentIndex").toInt() == 0;
+                if (!editorList || !groupedSaved || !targetSaved || !peerSaved ||
+                    !defaultCreated || !groupMoved || !groupSortedAfter ||
+                    !groupSortedBefore || !afterPlacementWorked ||
+                    controller.editorIssues().size() < 4 ||
+                    controller.issues().isEmpty() || !hasParentGroup ||
+                    !hasChildGroup || !hasDefaultGroup || !hasMovableDragProxy ||
+                    !beforePlacementWorked || !recordExclusive || !managementExclusive) {
+                    QTextStream(stderr)
+                        << "IssueTrace two-pane navigation check failed: editor="
+                        << (editorList != nullptr)
+                        << ", editorIssues=" << controller.editorIssues().size()
+                        << ", groupedIssues=" << controller.issues().size()
+                        << ", parent=" << hasParentGroup
+                        << ", child=" << hasChildGroup
+                        << ", default=" << hasDefaultGroup
+                        << ", movableDragProxy=" << hasMovableDragProxy
+                        << ", afterPlacement=" << afterPlacementWorked
+                        << ", beforePlacement=" << beforePlacementWorked
+                        << ", recordExclusive=" << recordExclusive
+                        << ", managementExclusive=" << managementExclusive << '\n';
+                    app.exit(7);
+                    return;
+                }
+                app.exit(0);
+            });
     }
     const auto markerOption = arguments.indexOf(QStringLiteral("--update-health-marker"));
     if (markerOption >= 0 && markerOption + 1 < arguments.size()) {
