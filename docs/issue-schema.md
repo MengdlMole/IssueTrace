@@ -20,7 +20,7 @@ IssueTraceWorkspace/
 - `attachments`：所属记录、相对路径、原名、MIME、大小和 SHA-256；
 - `issue_search`：FTS5 trigram 全文投影；
 - `metadata`：`schema_version=8`、草稿和工作区设置；`group_order.v1` 保存用户调整后的分组路径顺序；
-- `summary_drafts`、`form_template_versions`：保留 IssueTrace 开发期 schema 的数据与导出能力，不进入 0.4 主 UI。
+- `summary_drafts`、`form_template_versions`：保留 IssueTrace 开发期 schema 的数据与导出能力，当前不进入主 UI。
 
 `progress` 不单独存储，始终取最新一条有效 `type=progress` 的记录。`status_changed_at` 只在状态改变时更新；`remind_at` 可空，设置提醒不算一次问题活动。
 

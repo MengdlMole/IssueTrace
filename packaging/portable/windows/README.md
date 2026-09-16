@@ -50,7 +50,7 @@ build\artifacts\IssueTrace-<version>-windows-x86_64-dev.zip.sha256
 ./packaging/portable/windows/build-cross-macos.sh \
   ./build/toolchains/Qt \
   /opt/homebrew \
-  0.5.0
+  1.0.0
 ```
 
 版本参数可省略，脚本会读取 `CMakeLists.txt` 中的项目版本。交叉构建输出带 `-dev` 标记的完整 ZIP 和配套 `.sha256` 文件；包中不包含静态库、开发头文件或旧版映射样例。正式发布包必须由原生平台流水线生成。
