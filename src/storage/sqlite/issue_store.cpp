@@ -280,46 +280,56 @@ WorkspaceVerification verifyWorkspaceFiles(const std::filesystem::path& root) {
         // create transient -shm/-wal files while SQLite opens it, so validate
         // with read/write access but without SQLITE_OPEN_CREATE.
         database = openDatabase(databasePath, SQLITE_OPEN_READWRITE);
-        Statement integrity(database, "PRAGMA integrity_check");
-        if (sqlite3_step(integrity.get()) != SQLITE_ROW ||
-            columnText(integrity.get(), 0) != "ok") {
-            result.errors.push_back("SQLite 完整性检查失败");
-        }
-        const auto version = existingSchemaVersion(database);
-        if (!version || *version != kSchemaVersion) {
-            result.errors.push_back("不支持的工作区数据库版本");
-        }
-        result.issueCount = scalarCount(
-            database, "SELECT count(*) FROM issues WHERE deleted_at IS NULL");
-        result.timelineCount = scalarCount(
-            database, "SELECT count(*) FROM timeline_entries WHERE deleted_at IS NULL");
-        result.attachmentCount = scalarCount(
-            database, "SELECT count(*) FROM attachments WHERE deleted_at IS NULL");
+        // Finalize every prepared statement before closing the database. On
+        // Windows an outstanding statement keeps the database file locked;
+        // createBackup() then cannot rename its verified temporary directory.
+        {
+            Statement integrity(database, "PRAGMA integrity_check");
+            if (sqlite3_step(integrity.get()) != SQLITE_ROW ||
+                columnText(integrity.get(), 0) != "ok") {
+                result.errors.push_back("SQLite 完整性检查失败");
+            }
+            const auto version = existingSchemaVersion(database);
+            if (!version || *version != kSchemaVersion) {
+                result.errors.push_back("不支持的工作区数据库版本");
+            }
+            result.issueCount = scalarCount(
+                database, "SELECT count(*) FROM issues WHERE deleted_at IS NULL");
+            result.timelineCount = scalarCount(
+                database, "SELECT count(*) FROM timeline_entries WHERE deleted_at IS NULL");
+            result.attachmentCount = scalarCount(
+                database, "SELECT count(*) FROM attachments WHERE deleted_at IS NULL");
 
-        Statement attachments(database,
-            "SELECT relative_path,byte_size FROM attachments WHERE deleted_at IS NULL");
-        int step = SQLITE_ROW;
-        while ((step = sqlite3_step(attachments.get())) == SQLITE_ROW) {
-            const auto relative = std::filesystem::path(columnText(attachments.get(), 0));
-            if (!safeAttachmentPath(relative)) {
-                result.errors.push_back("附件路径不安全：" + relative.generic_string());
-                continue;
+            Statement attachments(database,
+                "SELECT relative_path,byte_size FROM attachments WHERE deleted_at IS NULL");
+            int step = SQLITE_ROW;
+            while ((step = sqlite3_step(attachments.get())) == SQLITE_ROW) {
+                const auto relative = std::filesystem::path(columnText(attachments.get(), 0));
+                if (!safeAttachmentPath(relative)) {
+                    result.errors.push_back("附件路径不安全：" + relative.generic_string());
+                    continue;
+                }
+                const auto file = root / relative;
+                std::error_code error;
+                const auto size = std::filesystem::file_size(file, error);
+                if (error) {
+                    result.errors.push_back("附件缺失：" + relative.generic_string());
+                } else if (size != static_cast<std::uintmax_t>(
+                                       sqlite3_column_int64(attachments.get(), 1))) {
+                    result.errors.push_back("附件大小不匹配：" + relative.generic_string());
+                }
             }
-            const auto file = root / relative;
-            std::error_code error;
-            const auto size = std::filesystem::file_size(file, error);
-            if (error) {
-                result.errors.push_back("附件缺失：" + relative.generic_string());
-            } else if (size != static_cast<std::uintmax_t>(
-                                   sqlite3_column_int64(attachments.get(), 1))) {
-                result.errors.push_back("附件大小不匹配：" + relative.generic_string());
-            }
+            if (step != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(database));
         }
-        if (step != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(database));
-        sqlite3_close(database);
+        const auto closeResult = sqlite3_close(database);
+        if (closeResult != SQLITE_OK) {
+            sqlite3_close_v2(database);
+            database = nullptr;
+            throw std::runtime_error("SQLite 验证连接无法关闭");
+        }
         database = nullptr;
     } catch (const std::exception& error) {
-        if (database) sqlite3_close(database);
+        if (database) sqlite3_close_v2(database);
         result.errors.push_back(std::string("无法验证数据库：") + error.what());
     }
     if (!std::filesystem::is_regular_file(root / "workspace.json")) {
