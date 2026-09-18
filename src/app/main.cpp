@@ -277,6 +277,96 @@ int main(int argc, char* argv[]) {
                     });
             });
     }
+    if (arguments.contains(QStringLiteral("--verify-explicit-metadata-save"))) {
+        controller.createQuickIssue(QStringLiteral("历史人员样本"),
+                                    QStringLiteral("张三 111"),
+                                    QStringLiteral("李四 222"));
+        controller.createQuickIssue(QStringLiteral("待编辑事件"),
+                                    QStringLiteral("旧提出人"),
+                                    QStringLiteral("旧处理人"));
+        const auto targetId = controller.selectedIssue()
+                                  .value(QStringLiteral("id")).toString();
+        auto* details = window->findChild<QObject*>(
+            QStringLiteral("eventDetailsDialog"));
+        const auto opened = details && QMetaObject::invokeMethod(details, "open");
+        QTimer::singleShot(150, &app,
+            [&app, window, &controller, details, opened, targetId] {
+                auto* reporter = window->findChild<QObject*>(
+                    QStringLiteral("metadata-reporter"));
+                auto* assignee = window->findChild<QObject*>(
+                    QStringLiteral("metadata-assignee"));
+                auto* save = window->findChild<QObject*>(
+                    QStringLiteral("saveIssueDetailsButton"));
+                const auto reporterIndex = controller.reporterOptions().indexOf(
+                    QStringLiteral("张三 111"));
+                const auto assigneeIndex = controller.assigneeOptions().indexOf(
+                    QStringLiteral("李四 222"));
+                const auto selectReporter = reporter && reporterIndex >= 0 &&
+                    reporter->setProperty("currentIndex", reporterIndex) &&
+                    QMetaObject::invokeMethod(reporter, "activated",
+                                              Q_ARG(int, reporterIndex));
+                const auto selectAssignee = assignee && assigneeIndex >= 0 &&
+                    assignee->setProperty("currentIndex", assigneeIndex) &&
+                    QMetaObject::invokeMethod(assignee, "activated",
+                                              Q_ARG(int, assigneeIndex));
+                const auto editTitle = details && QMetaObject::invokeMethod(
+                    details, "setDraftField",
+                    Q_ARG(QVariant, QVariant(QStringLiteral("title"))),
+                    Q_ARG(QVariant, QVariant(QStringLiteral("  用户输入 保留  "))));
+                const auto backendUnchanged =
+                    controller.selectedIssue().value(QStringLiteral("reporter")).toString() ==
+                        QStringLiteral("旧提出人") &&
+                    controller.selectedIssue().value(QStringLiteral("assignee")).toString() ==
+                        QStringLiteral("旧处理人");
+                controller.selectIssue(targetId);
+                const auto draft = details
+                    ? details->property("draftIssue").toMap() : QVariantMap{};
+                const auto draftPreserved =
+                    draft.value(QStringLiteral("reporter")).toString() ==
+                        QStringLiteral("张三 111") &&
+                    draft.value(QStringLiteral("assignee")).toString() ==
+                        QStringLiteral("李四 222") &&
+                    draft.value(QStringLiteral("title")).toString() ==
+                        QStringLiteral("  用户输入 保留  ");
+                const auto saveInvoked = save && save->property("enabled").toBool() &&
+                    QMetaObject::invokeMethod(save, "clicked");
+                QTimer::singleShot(100, &app,
+                    [&app, &controller, opened, reporter, assignee, save,
+                     selectReporter, selectAssignee, editTitle, backendUnchanged,
+                     draftPreserved, saveInvoked] {
+                        const auto saved = controller.selectedIssue();
+                        const auto valid = opened && reporter && assignee && save &&
+                            selectReporter && selectAssignee && editTitle &&
+                            backendUnchanged && draftPreserved && saveInvoked &&
+                            saved.value(QStringLiteral("reporter")).toString() ==
+                                QStringLiteral("张三 111") &&
+                            saved.value(QStringLiteral("assignee")).toString() ==
+                                QStringLiteral("李四 222") &&
+                            saved.value(QStringLiteral("title")).toString() ==
+                                QStringLiteral("  用户输入 保留  ");
+                        if (!valid) {
+                            QTextStream(stderr)
+                                << "IssueTrace explicit metadata save check failed: opened="
+                                << opened << ", selectReporter=" << selectReporter
+                                << ", selectAssignee=" << selectAssignee
+                                << ", editTitle=" << editTitle
+                                << ", backendUnchanged=" << backendUnchanged
+                                << ", draftPreserved=" << draftPreserved
+                                << ", saveInvoked=" << saveInvoked
+                                << ", savedReporter="
+                                << saved.value(QStringLiteral("reporter")).toString()
+                                << ", savedAssignee="
+                                << saved.value(QStringLiteral("assignee")).toString()
+                                << ", savedTitle='"
+                                << saved.value(QStringLiteral("title")).toString()
+                                << "'\n";
+                            app.exit(9);
+                            return;
+                        }
+                        app.exit(0);
+                    });
+            });
+    }
     if (arguments.contains(QStringLiteral("--verify-two-pane-navigation"))) {
         const auto token = QString::number(QCoreApplication::applicationPid());
         const auto sourceParent = QStringLiteral("支付域-") + token;

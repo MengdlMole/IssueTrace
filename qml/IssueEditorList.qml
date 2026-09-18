@@ -124,10 +124,21 @@ Pane {
                         delegate: ItemDelegate {
                             id: attentionDelegate
                             required property var modelData
-                            width: attentionList.width
+                            x: 4
+                            width: attentionList.width - 8
                             height: 72
+                            hoverEnabled: true
                             highlighted: root.selectedIssueId === modelData.id
                             onClicked: root.issueRequested(modelData.id)
+                            background: Rectangle {
+                                radius: 8
+                                color: attentionDelegate.highlighted
+                                    ? palette.highlight
+                                    : attentionDelegate.hovered
+                                      ? palette.alternateBase : "transparent"
+                                border.width: attentionDelegate.highlighted ? 0 : 1
+                                border.color: palette.midlight
+                            }
                             contentItem: ColumnLayout {
                                 spacing: 3
                                 Label { Layout.fillWidth: true; text: "!  " + modelData.title; font.bold: true; color: attentionDelegate.highlighted ? palette.highlightedText : "#b42318"; elide: Text.ElideRight }
@@ -167,10 +178,21 @@ Pane {
                         delegate: ItemDelegate {
                             id: eventDelegate
                             required property var modelData
-                            width: normalList.width
+                            x: 4
+                            width: normalList.width - 8
                             height: 68
+                            hoverEnabled: true
                             highlighted: root.selectedIssueId === modelData.id
                             onClicked: root.issueRequested(modelData.id)
+                            background: Rectangle {
+                                radius: 8
+                                color: eventDelegate.highlighted
+                                    ? palette.highlight
+                                    : eventDelegate.hovered
+                                      ? palette.alternateBase : "transparent"
+                                border.width: eventDelegate.highlighted ? 0 : 1
+                                border.color: palette.midlight
+                            }
                             contentItem: ColumnLayout {
                                 spacing: 3
                                 RowLayout {

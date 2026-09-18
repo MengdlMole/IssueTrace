@@ -204,11 +204,29 @@ ApplicationWindow {
             }
             Label {
                 visible: issueDetails.dirty
-                text: "保存中…"
+                text: "有未保存修改"
                 color: "#b66a00"
             }
             Button { text: "工具"; onClicked: toolsMenu.popup() }
-            Button { text: "+ 记录事件"; highlighted: true; onClicked: quickCreate.open() }
+            Button {
+                id: quickCreateButton
+                objectName: "quickCreateButton"
+                text: "+ 记录事件"
+                onClicked: quickCreate.open()
+                contentItem: Label {
+                    text: quickCreateButton.text
+                    color: root.palette.highlightedText
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: 7
+                    color: root.palette.highlight
+                    opacity: quickCreateButton.down ? 0.82
+                        : quickCreateButton.hovered ? 0.92 : 1
+                }
+            }
         }
     }
 

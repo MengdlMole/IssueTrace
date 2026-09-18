@@ -69,4 +69,14 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -E env
 if(NOT reminder_result EQUAL 0)
     message(FATAL_ERROR "Packaged custom reminder check returned ${reminder_result}")
 endif()
+execute_process(COMMAND "${CMAKE_COMMAND}" -E env
+    QT_QPA_PLATFORM=offscreen
+    ISSUETRACE_WORKSPACE=${TEST_ROOT}/metadata-save-workspace
+    "${install_root}/IssueTrace.app/Contents/MacOS/IssueTrace"
+    --verify-explicit-metadata-save
+    RESULT_VARIABLE metadata_save_result)
+if(NOT metadata_save_result EQUAL 0)
+    message(FATAL_ERROR
+        "Packaged explicit metadata save check returned ${metadata_save_result}")
+endif()
 file(REMOVE_RECURSE "${TEST_ROOT}")

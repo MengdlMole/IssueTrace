@@ -12,6 +12,10 @@ Pane {
     property var selectedTags: []
     property var collapsedGroups: ({})
     property bool advancedFiltersVisible: false
+    property string draggedGroupPath: ""
+    property string draggedGroupLabel: ""
+    property real groupDragListY: -1
+    property var activeGroupDragProxy: null
     readonly property bool groupDragUsesMovableProxy: true
     readonly property string selectedIssueStatusText: {
         for (let i = 0; i < controller.issues.length; ++i) {
@@ -25,6 +29,28 @@ Pane {
     signal filterRequested(string text, string status, string priority, string tags,
                            int minimumMinutes, int maximumMinutes, string groupPath,
                            string service, string version, string ticket, string sort)
+
+    Timer {
+        interval: 35
+        repeat: true
+        running: root.draggedGroupPath !== "" && root.groupDragListY >= 0 &&
+                 groupList.contentHeight > groupList.height
+        onTriggered: {
+            const edge = 42
+            const previousY = groupList.contentY
+            if (root.groupDragListY < edge) {
+                groupList.contentY = Math.max(0, groupList.contentY - 10)
+            } else if (root.groupDragListY > groupList.height - edge) {
+                groupList.contentY = Math.min(
+                    Math.max(0, groupList.contentHeight - groupList.height),
+                    groupList.contentY + 10)
+            }
+            // The drag proxy belongs to a scrolling delegate. Compensate for
+            // the content movement so the proxy remains under the pointer.
+            if (root.activeGroupDragProxy)
+                root.activeGroupDragProxy.y += groupList.contentY - previousY
+        }
+    }
 
     function statusLabel(value) {
         for (let i = 0; i < statusOptions.length; ++i)
@@ -172,11 +198,10 @@ Pane {
                     color: palette.mid
                     font.bold: true
                 }
-                Button {
+                QuietButton {
                     visible: root.activeFilterCount() > 0
                     objectName: "resetManagementFiltersButton"
                     text: "重置筛选"
-                    flat: true
                     onClicked: root.clearAllFilters()
                 }
             }
@@ -304,66 +329,66 @@ Pane {
                     verticalAlignment: Text.AlignVCenter
                     color: palette.mid
                 }
-                Button {
+                QuietButton {
                     visible: searchInput.text.trim().length > 0
                     text: "搜索：" + searchInput.text.trim() + "  ×"
-                    height: 28; flat: true
+                    height: 28
                     onClicked: { searchInput.clear(); root.applyFilters() }
                 }
-                Button {
+                QuietButton {
                     visible: root.selectedGroupPath.length > 0
                     text: "分组：" + root.selectedGroupLabel() + "  ×"
-                    height: 28; flat: true
+                    height: 28
                     onClicked: root.selectGroup("")
                 }
-                Button {
+                QuietButton {
                     visible: statusFilter.currentIndex > 0
                     text: "状态：" + statusFilter.currentText + "  ×"
-                    height: 28; flat: true
+                    height: 28
                     onClicked: { statusFilter.currentIndex = 0; root.applyFilters() }
                 }
-                Button {
+                QuietButton {
                     visible: priorityFilter.currentIndex > 0
                     text: "优先级：" + priorityFilter.currentText + "  ×"
-                    height: 28; flat: true
+                    height: 28
                     onClicked: { priorityFilter.currentIndex = 0; root.applyFilters() }
                 }
-                Button {
+                QuietButton {
                     visible: serviceFilter.currentIndex > 0
                     text: "服务：" + serviceFilter.currentText + "  ×"
-                    height: 28; flat: true
+                    height: 28
                     onClicked: { serviceFilter.currentIndex = 0; root.applyFilters() }
                 }
-                Button {
+                QuietButton {
                     visible: versionFilter.currentIndex > 0
                     text: "版本：" + versionFilter.currentText + "  ×"
-                    height: 28; flat: true
+                    height: 28
                     onClicked: { versionFilter.currentIndex = 0; root.applyFilters() }
                 }
-                Button {
+                QuietButton {
                     visible: ticketFilter.text.trim().length > 0
                     text: "问题单：" + ticketFilter.text.trim() + "  ×"
-                    height: 28; flat: true
+                    height: 28
                     onClicked: { ticketFilter.clear(); root.applyFilters() }
                 }
-                Button {
+                QuietButton {
                     visible: minimumDuration.value > 0
                     text: "时长 ≥ " + minimumDuration.value + " 分钟  ×"
-                    height: 28; flat: true
+                    height: 28
                     onClicked: { minimumDuration.value = 0; root.applyFilters() }
                 }
-                Button {
+                QuietButton {
                     visible: maximumDuration.value > 0
                     text: "时长 ≤ " + maximumDuration.value + " 分钟  ×"
-                    height: 28; flat: true
+                    height: 28
                     onClicked: { maximumDuration.value = 0; root.applyFilters() }
                 }
                 Repeater {
                     model: root.selectedTags
-                    delegate: Button {
+                    delegate: QuietButton {
                         required property string modelData
                         text: "标签：#" + modelData + "  ×"
-                        height: 28; flat: true
+                        height: 28
                         onClicked: root.toggleTag(modelData)
                     }
                 }
@@ -377,32 +402,35 @@ Pane {
             Layout.fillHeight: true
 
             Pane {
-                SplitView.preferredWidth: 250
-                SplitView.minimumWidth: 210
-                SplitView.maximumWidth: 360
-                padding: 10
+                SplitView.preferredWidth: 280
+                SplitView.minimumWidth: 235
+                SplitView.maximumWidth: 400
+                padding: 12
                 ColumnLayout {
                     anchors.fill: parent
-                    spacing: 6
+                    spacing: 8
                     RowLayout {
                         Layout.fillWidth: true
                         Label { text: "分组"; font.pixelSize: 16; font.bold: true; Layout.fillWidth: true }
-                        ToolButton { text: "展开"; onClicked: root.setAllCollapsed(false) }
-                        ToolButton { text: "折叠"; onClicked: root.setAllCollapsed(true) }
+                        QuietButton { text: "展开"; onClicked: root.setAllCollapsed(false) }
+                        QuietButton { text: "折叠"; onClicked: root.setAllCollapsed(true) }
                     }
                     Label {
                         Layout.fillWidth: true
-                        text: "拖到目标行上方/下方排序，拖到中部设为子分组"
+                        text: root.draggedGroupLabel
+                            ? "正在移动“" + root.draggedGroupLabel
+                              + "”· 蓝线排序，高亮区移入"
+                            : "按住 ⋮⋮ 拖动：上下边缘排序，中部移为子分组"
                         wrapMode: Text.Wrap
-                        color: palette.mid
-                        font.pixelSize: 11
+                        color: root.draggedGroupLabel ? palette.highlight : palette.mid
+                        font.pixelSize: 12
                     }
                     ListView {
                         id: groupList
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
-                        spacing: 3
+                        spacing: 0
                         model: root.controller.issueGroups
                         delegate: Rectangle {
                             id: groupRow
@@ -410,41 +438,70 @@ Pane {
                             required property var modelData
                             property string groupPath: modelData.path
                             property string dropPlacement: "child"
+                            readonly property bool invalidDropTarget:
+                                root.draggedGroupPath !== "" &&
+                                (groupPath === root.draggedGroupPath ||
+                                 groupPath.startsWith(root.draggedGroupPath + "/") ||
+                                 groupPath === "__default__")
                             readonly property bool usesMovableDragProxy:
                                 groupDragArea.drag.target === groupDragProxy
                             width: groupList.width
-                            height: root.groupVisible(modelData.path) ? 40 : 0
+                            height: root.groupVisible(modelData.path) ? 44 : 0
                             visible: height > 0
-                            radius: 7
+                            radius: 8
                             color: root.selectedGroupPath === modelData.path
                                 ? palette.highlight
                                 : (groupDrop.containsDrag && dropPlacement === "child"
-                                    ? palette.alternateBase : "transparent")
+                                    ? Qt.rgba(palette.highlight.r, palette.highlight.g,
+                                              palette.highlight.b, 0.08)
+                                    : "transparent")
                             border.width: groupDrop.containsDrag && dropPlacement === "child" ? 1 : 0
                             border.color: palette.highlight
                             opacity: groupDragArea.drag.active ? 0.55 : 1
 
                             Item {
                                 id: groupDragProxy
-                                width: 1
-                                height: 1
+                                width: Math.min(190, Math.max(120, groupRow.width - 36))
+                                height: 34
                                 x: groupRow.width / 2
                                 y: groupRow.height / 2
+                                visible: groupDragArea.drag.active
+                                z: 20
                                 Drag.active: groupDragArea.drag.active
                                 Drag.source: groupRow
                                 Drag.keys: ["issuetrace-group"]
                                 Drag.supportedActions: Qt.MoveAction
+                                Drag.hotSpot.x: width / 2
+                                Drag.hotSpot.y: height / 2
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: 8
+                                    color: palette.base
+                                    border.width: 1
+                                    border.color: palette.highlight
+                                }
+                                Label {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 12
+                                    anchors.rightMargin: 12
+                                    text: "⋮⋮  " + groupRow.modelData.label
+                                    color: palette.text
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                }
                             }
 
                             DropArea {
                                 id: groupDrop
                                 anchors.fill: parent
-                                enabled: groupRow.modelData.path !== "__default__"
+                                enabled: !groupRow.invalidDropTarget
                                 keys: ["issuetrace-group"]
                                 onPositionChanged: function(drag) {
+                                    root.groupDragListY = groupRow.mapToItem(
+                                        groupList, drag.x, drag.y).y
                                     if (!groupRow.groupPath) groupRow.dropPlacement = "root"
-                                    else if (drag.y < height * 0.3) groupRow.dropPlacement = "before"
-                                    else if (drag.y > height * 0.7) groupRow.dropPlacement = "after"
+                                    else if (drag.y < height * 0.28) groupRow.dropPlacement = "before"
+                                    else if (drag.y > height * 0.72) groupRow.dropPlacement = "after"
                                     else groupRow.dropPlacement = "child"
                                 }
                                 onExited: groupRow.dropPlacement = "child"
@@ -462,13 +519,28 @@ Pane {
                                 visible: groupDrop.containsDrag &&
                                          groupRow.dropPlacement === "before"
                                 anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                                anchors.leftMargin: 6; anchors.rightMargin: 6
                                 height: 3; radius: 1; color: palette.highlight
                             }
                             Rectangle {
                                 visible: groupDrop.containsDrag &&
                                          groupRow.dropPlacement === "after"
                                 anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+                                anchors.leftMargin: 6; anchors.rightMargin: 6
                                 height: 3; radius: 1; color: palette.highlight
+                            }
+                            Label {
+                                visible: groupDrop.containsDrag &&
+                                         groupRow.dropPlacement === "child" &&
+                                         groupRow.groupPath !== ""
+                                anchors.right: parent.right
+                                anchors.rightMargin: 9
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "移入"
+                                font.pixelSize: 11
+                                font.bold: true
+                                color: palette.highlight
+                                z: 3
                             }
                             MouseArea {
                                 anchors.fill: parent
@@ -476,9 +548,9 @@ Pane {
                             }
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 9 + Number(groupRow.modelData.depth || 0) * 20
-                                anchors.rightMargin: 9
-                                spacing: 5
+                                anchors.leftMargin: 8 + Number(groupRow.modelData.depth || 0) * 18
+                                anchors.rightMargin: 10
+                                spacing: 6
                                 Item {
                                     Layout.preferredWidth: 22
                                     Layout.preferredHeight: 22
@@ -491,12 +563,22 @@ Pane {
                                     }
                                 }
                                 Item {
-                                    Layout.preferredWidth: 15
-                                    Layout.preferredHeight: 22
+                                    Layout.preferredWidth: 28
+                                    Layout.preferredHeight: 30
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 6
+                                        visible: groupRow.modelData.draggable
+                                        color: groupDragArea.pressed || groupDragArea.containsMouse
+                                            ? palette.alternateBase : "transparent"
+                                        border.width: groupDragArea.containsMouse ? 1 : 0
+                                        border.color: palette.midlight
+                                    }
                                     Label {
                                         anchors.centerIn: parent
                                         visible: groupRow.modelData.draggable
                                         text: "⋮⋮"
+                                        font.pixelSize: 16
                                         color: root.selectedGroupPath === groupRow.modelData.path
                                             ? palette.highlightedText : palette.mid
                                         ToolTip.visible: groupDragArea.drag.active
@@ -507,12 +589,18 @@ Pane {
                                         objectName: "groupDragHandle"
                                         anchors.fill: parent
                                         enabled: groupRow.modelData.draggable
+                                        hoverEnabled: true
                                         cursorShape: Qt.OpenHandCursor
                                         drag.target: groupDragProxy
                                         drag.axis: Drag.XAndYAxis
-                                        onPressed: {
-                                            groupDragProxy.x = groupRow.width / 2
-                                            groupDragProxy.y = groupRow.height / 2
+                                        onPressed: function(mouse) {
+                                            const point = mapToItem(
+                                                groupRow, mouse.x, mouse.y)
+                                            groupDragProxy.x = point.x - groupDragProxy.width / 2
+                                            groupDragProxy.y = point.y - groupDragProxy.height / 2
+                                            root.draggedGroupPath = groupRow.groupPath
+                                            root.draggedGroupLabel = groupRow.modelData.label
+                                            root.activeGroupDragProxy = groupDragProxy
                                             cursorShape = Qt.ClosedHandCursor
                                         }
                                         onReleased: {
@@ -520,12 +608,22 @@ Pane {
                                             // A successful drop refreshes the model and can destroy
                                             // this delegate synchronously, so submitting the drop must
                                             // be the final operation in this handler.
+                                            Qt.callLater(function() {
+                                                root.draggedGroupPath = ""
+                                                root.draggedGroupLabel = ""
+                                                root.groupDragListY = -1
+                                                root.activeGroupDragProxy = null
+                                            })
                                             groupDragProxy.Drag.drop()
                                         }
                                         onCanceled: {
                                             groupDragProxy.Drag.cancel()
                                             groupDragProxy.x = groupRow.width / 2
                                             groupDragProxy.y = groupRow.height / 2
+                                            root.draggedGroupPath = ""
+                                            root.draggedGroupLabel = ""
+                                            root.groupDragListY = -1
+                                            root.activeGroupDragProxy = null
                                             cursorShape = Qt.OpenHandCursor
                                         }
                                     }
@@ -601,7 +699,7 @@ Pane {
                                 : cardMouse.containsMouse ? palette.alternateBase : palette.base
                             border.color: selected ? palette.highlight : palette.midlight
                             border.width: selected ? 1.5 : 1
-                            radius: 10
+                            radius: 8
 
                             Rectangle {
                                 anchors.left: parent.left
@@ -667,7 +765,7 @@ Pane {
                                             font.bold: true
                                         }
                                     }
-                                    ToolButton {
+                                    QuietButton {
                                         text: "编辑"
                                         Layout.preferredHeight: 28
                                         onClicked: root.editIssueRequested(issueCard.issue.id)

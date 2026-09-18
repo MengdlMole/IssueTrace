@@ -204,6 +204,7 @@ if(ISSUETRACE_BUILD_DESKTOP)
         OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml/IssueTrace"
         QML_FILES
             qml/Main.qml
+            qml/QuietButton.qml
             qml/EventMetadataFields.qml
             qml/EventFormFields.qml
             qml/IssueCalendar.qml
@@ -294,6 +295,13 @@ if(ISSUETRACE_BUILD_DESKTOP)
                 $<TARGET_FILE:IssueTrace> --verify-tracked-duration-edit
         )
         set_tests_properties(issuetrace_tracked_duration_edit_smoke PROPERTIES TIMEOUT 15)
+        add_test(NAME issuetrace_explicit_metadata_save_smoke
+            COMMAND "${CMAKE_COMMAND}" -E env
+                QT_QPA_PLATFORM=offscreen
+                ISSUETRACE_WORKSPACE=${CMAKE_CURRENT_BINARY_DIR}/metadata-save-workspace
+                $<TARGET_FILE:IssueTrace> --verify-explicit-metadata-save
+        )
+        set_tests_properties(issuetrace_explicit_metadata_save_smoke PROPERTIES TIMEOUT 15)
         add_test(NAME issuetrace_two_pane_navigation_smoke
             COMMAND "${CMAKE_COMMAND}" -E env
                 QT_QPA_PLATFORM=offscreen

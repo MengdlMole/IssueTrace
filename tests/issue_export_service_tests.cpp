@@ -85,6 +85,9 @@ int main() {
     assert(markdownFolder.filename().string().substr(0, 10).find_first_not_of("0123456789") == std::string::npos);
     assert(std::filesystem::is_regular_file(markdownFolder / "事件记录.md"));
     assert(std::filesystem::is_regular_file(markdownFolder / "事件总结.md"));
+    for (const auto& item : std::filesystem::directory_iterator(output)) {
+        assert(!item.path().filename().string().starts_with(".issuetrace-export-"));
+    }
     const auto exportedAttachmentName =
         std::filesystem::path(attachment.relativePath).filename();
     assert(std::filesystem::is_regular_file(

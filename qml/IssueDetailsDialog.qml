@@ -9,26 +9,41 @@ Dialog {
     required property var controller
     property var draftIssue: ({})
     property bool dirty: false
+    property bool saving: false
 
     function setDraftField(id, value) {
         const updated = Object.assign({}, draftIssue)
         updated[id] = value
         draftIssue = updated
         dirty = true
-        saveTimer.restart()
     }
-    function reload() {
+    function reloadTrackedDuration() {
         draftIssue = Object.assign({}, controller.selectedIssue)
         const totalMinutes = Math.floor(Number(
             controller.selectedIssue.trackedMilliseconds || 0) / 60000)
         trackedHours.value = Math.floor(totalMinutes / 60)
         trackedMinutes.value = totalMinutes % 60
+    }
+    function reload() {
+        reloadTrackedDuration()
         dirty = false
     }
-    function flush() {
+    function save() {
         if (!dirty || controller.selectedIssue.id === undefined) return true
-        if (!controller.saveIssue(draftIssue)) return false
+        saving = true
+        const saved = controller.saveIssue(draftIssue)
+        saving = false
+        if (!saved) return false
+        reload()
+        return true
+    }
+    function discard() {
         dirty = false
+        reload()
+    }
+    // Kept for callers that switch pages or close the application. Metadata is
+    // never committed implicitly; only save() writes the draft to the store.
+    function flush() {
         return true
     }
 
@@ -43,11 +58,27 @@ Dialog {
     Shortcut {
         sequences: [StandardKey.Cancel]
         enabled: root.opened
-        onActivated: if (root.flush()) root.close()
+        onActivated: {
+            root.discard()
+            root.close()
+        }
     }
 
     footer: DialogButtonBox {
-        Button { text: "关闭"; onClicked: if (root.flush()) root.close() }
+        Button {
+            text: "取消"
+            onClicked: {
+                root.discard()
+                root.close()
+            }
+        }
+        Button {
+            objectName: "saveIssueDetailsButton"
+            text: "保存"
+            highlighted: true
+            enabled: root.dirty && !root.saving
+            onClicked: if (root.save()) root.close()
+        }
     }
 
     ScrollView {
@@ -67,10 +98,10 @@ Dialog {
                 values: root.draftIssue
                 enableDescriptionImages: true
                 onFieldEdited: (fieldId, value) => root.setDraftField(fieldId, value)
-                onDescriptionImagePasteRequested: if (root.flush())
+                onDescriptionImagePasteRequested:
                     root.controller.addDescriptionClipboardImage()
                 onDescriptionImageDropped: function(source) {
-                    if (root.flush()) root.controller.addDescriptionImage(source)
+                    root.controller.addDescriptionImage(source)
                 }
             }
 
@@ -117,12 +148,12 @@ Dialog {
                 Button {
                     objectName: "descriptionPasteImageButton"
                     text: "粘贴图片"
-                    onClicked: if (root.flush()) root.controller.addDescriptionClipboardImage()
+                    onClicked: root.controller.addDescriptionClipboardImage()
                 }
                 Button {
                     objectName: "descriptionChooseImageButton"
                     text: "选择图片…"
-                    onClicked: if (root.flush()) descriptionImageDialog.open()
+                    onClicked: descriptionImageDialog.open()
                 }
                 Label { text: "也可以拖放图片；双击缩略图打开"; color: palette.mid }
                 Item { Layout.fillWidth: true }
@@ -198,9 +229,13 @@ Dialog {
                     text: "保存计时"
                     enabled: !root.controller.selectedIssue.timerRunning
                     onClicked: {
-                        if (root.flush() && root.controller.setSelectedIssueTrackedDuration(
-                                trackedHours.value, trackedMinutes.value))
-                            root.reload()
+                        if (root.controller.setSelectedIssueTrackedDuration(
+                                trackedHours.value, trackedMinutes.value)) {
+                            const totalMinutes = Math.floor(Number(
+                                root.controller.selectedIssue.trackedMilliseconds || 0) / 60000)
+                            trackedHours.value = Math.floor(totalMinutes / 60)
+                            trackedMinutes.value = totalMinutes % 60
+                        }
                     }
                 }
                 Item { Layout.fillWidth: true }
@@ -224,14 +259,10 @@ Dialog {
         onAccepted: root.controller.addDescriptionImage(selectedFile)
     }
 
-    Timer {
-        id: saveTimer
-        interval: 800
-        onTriggered: if (root.dirty && root.controller.saveIssue(root.draftIssue))
-            root.dirty = false
-    }
     Connections {
         target: root.controller
-        function onSelectedIssueChanged() { root.reload() }
+        function onSelectedIssueChanged() {
+            if (!root.opened || (!root.dirty && !root.saving)) root.reload()
+        }
     }
 }

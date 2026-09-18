@@ -40,14 +40,12 @@ ListView {
                     color: palette.highlight
                 }
                 Label { text: modelData.occurredAt; color: palette.mid; Layout.fillWidth: true }
-                Button {
+                QuietButton {
                     text: editing ? "取消" : "编辑"
-                    flat: true
                     onClicked: editing = !editing
                 }
-                Button {
+                QuietButton {
                     text: "删除"
-                    flat: true
                     onClicked: root.controller.deleteTimelineEntry(modelData.id)
                 }
             }
@@ -87,14 +85,12 @@ ListView {
                         asynchronous: true
                     }
                     Label { Layout.fillWidth: true; text: modelData.name; elide: Text.ElideMiddle }
-                    Button {
+                    QuietButton {
                         text: "打开"
-                        flat: true
                         onClicked: root.controller.openAttachment(modelData.url)
                     }
-                    Button {
+                    QuietButton {
                         text: "删除"
-                        flat: true
                         onClicked: root.controller.deleteAttachment(modelData.id)
                     }
                 }
@@ -102,14 +98,12 @@ ListView {
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
-                Button {
+                QuietButton {
                     text: "添加截图"
-                    flat: true
                     onClicked: root.controller.pasteScreenshot(modelData.id)
                 }
-                Button {
+                QuietButton {
                     text: "添加附件"
-                    flat: true
                     onClicked: {
                         attachmentDialog.timelineEntryId = modelData.id
                         attachmentDialog.open()

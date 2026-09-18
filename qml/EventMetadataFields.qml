@@ -41,9 +41,13 @@ GridLayout {
             model: parent.choices
             Component.onCompleted: editText = parent.currentValue
             onEditTextChanged: if (activeFocus)
-                root.fieldEdited(parent.fieldId, editText.trim())
-            onAccepted: root.fieldEdited(parent.fieldId, editText.trim())
-            onActivated: root.fieldEdited(parent.fieldId, currentText)
+                root.fieldEdited(parent.fieldId, editText)
+            onAccepted: root.fieldEdited(parent.fieldId, editText)
+            onActivated: {
+                const selectedText = currentText
+                editText = selectedText
+                root.fieldEdited(parent.fieldId, selectedText)
+            }
             ToolTip.visible: hovered
             ToolTip.text: parent.hint
         }
@@ -143,7 +147,7 @@ GridLayout {
             Layout.fillWidth: true
             Component.onCompleted: text = ticketField.currentValue
             placeholderText: "选填"
-            onTextEdited: root.fieldEdited("ticket", text.trim())
+            onTextEdited: root.fieldEdited("ticket", text)
         }
     }
 }

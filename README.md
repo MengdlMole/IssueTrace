@@ -30,9 +30,9 @@ IssueTrace 不需要账号、服务端和网络，不接管 Obsidian，也不与
 | 领域 | 当前能力 |
 |---|---|
 | 快速创建 | `Ctrl/Cmd + N` 打开与详情编辑共用的表单；仅事件标题必填，时间自动生成；可选填文字描述、提出人、处理人、版本号、服务、优先级、多级分组、多个标签和问题单 |
-| 事件详情 | 自动保存标题、文字描述和属性；提出人、处理人、版本号、服务、分组可选择历史值或输入新值；属性采用左右两列布局 |
+| 事件详情 | 标题、文字描述和属性先在弹窗内编辑，只有点击“保存”才提交，“取消”不写入；提出人、处理人、版本号、服务、分组可选择完整历史值或输入新值；属性采用左右两列布局 |
 | 事件记录 | 普通记录、进展、结论三种类型；自动记录时间、倒序显示，支持编辑和删除；最新进展自动投影到事件列表 |
-| 草稿与快捷键 | 按事件自动保存未提交草稿；`Ctrl/Cmd + Enter` 提交，`Ctrl/Cmd + Shift + Enter` 记录进展 |
+| 时间线草稿与快捷键 | 按事件自动保存未提交的时间线输入；`Ctrl/Cmd + Enter` 提交，`Ctrl/Cmd + Shift + Enter` 记录进展；不影响事件详情的显式保存规则 |
 | 图片与附件 | 已创建事件的描述支持粘贴、选择或拖放图片；时间线支持粘贴截图、拖放或多选任意日志/附件，单文件最大 100 MB |
 | 状态 | 固定为待处理、处理中、等待、已完成；状态变化立即同步到详情、管理列表和记录页列表 |
 | 关注与提醒 | 待处理超过 30 分钟、处理中超过 60 分钟未活动会进入“需要关注”；支持 30 分钟、2 小时、明天此时或自定义未来时间提醒，并通过托盘发送桌面通知 |
@@ -84,7 +84,7 @@ IssueTrace 不需要账号、服务端和网络，不接管 Obsidian，也不与
 
 所有未签名、未公证或未经目标系统原生验收的压缩包均带 `-dev`。稳定发布前必须完成 [发布检查清单](docs/release-checklist.md)，不得仅删除文件名中的 `-dev`。
 
-当前 macOS 开发构建的 11 项自动化测试全部通过，覆盖核心 CRUD、搜索筛选、迁移、XLSX/Markdown 导出、更新包边界、升级回滚、长页面滚动、状态即时刷新、自定义提醒、描述图片、计时修正、分组迁移、历史字段、三页面导航和事件日历投影。自动化通过不等同于三个目标系统的人工发布验收。
+当前 macOS 开发构建的 12 项自动化测试全部通过，覆盖核心 CRUD、搜索筛选、迁移、XLSX/Markdown 导出、更新包边界、升级回滚、长页面滚动、状态即时刷新、自定义提醒、描述图片、计时修正、显式详情保存、分组迁移、历史字段、三页面导航和事件日历投影。自动化通过不等同于三个目标系统的人工发布验收。
 
 ## 三分钟上手
 
@@ -149,6 +149,8 @@ YYYYMMDDHH <问题单>-<事件标题>/
 ```
 
 `事件记录.md` 按时间写入全部记录，并在对应记录下面插入图片或附件链接。`事件总结.md` 不复制时间线或自动列出附件，只提供事件概述、事件处理、事件解决、验证和遗留问题、后续建议和相关附件等提炼位置。目录名前十位是事件创建时间（本地时间，`YYYYMMDDHH`）。目标目录已存在时 IssueTrace 会拒绝静默覆盖。
+
+选择 Obsidian Vault 或其子目录作为导出位置时，IssueTrace 会在最终事件目录中逐个发布附件和 Markdown，使 Obsidian 的文件监听可以立即发现新笔记，无需再手动移动目录。
 
 XLSX 一行一个事件，导出当前筛选结果；时间使用真正的 Excel 日期，首行冻结并启用筛选。文本始终按字符串写入，避免公式注入。
 
@@ -230,9 +232,7 @@ macOS 可以生成供 Windows 11 x86_64 解压运行的完整便携 ZIP。构建
 ```sh
 brew install cmake ninja mingw-w64
 
-./packaging/portable/windows/build-cross-macos.sh \
-  ./build/toolchains/Qt \
-  /opt/homebrew
+./packaging/portable/windows/build-cross-macos.sh ./build/toolchains/Qt /opt/homebrew
 ```
 
 输出为：
@@ -241,14 +241,13 @@ brew install cmake ninja mingw-w64
 build/artifacts/IssueTrace-<version>-windows-x86_64-dev.zip
 build/artifacts/IssueTrace-<version>-windows-x86_64-dev.zip.sha256
 ```
-
+Ter
 交叉构建会生成 EXE、Qt/MinGW 运行库、插件、QML 模块、许可证、SBOM、逐文件清单和校验和，并检查 PE 依赖闭包。macOS 不能完成 Windows GUI 运行验证；发布前仍必须在真实 Windows 11 x86_64 上验证首次启动、中文路径、工作区读写、剪贴板、文件对话框、通知、托盘、升级和回滚。当前不支持 Windows ARM64。
 
 Windows 11 原生构建推荐使用 PowerShell：
 
 ```powershell
-.\packaging\portable\windows\build-native.ps1 `
-  -QtRoot C:\Qt\6.11.1\mingw_64
+.\packaging\portable\windows\build-native.ps1 -QtRoot C:\Qt\6.11.1\mingw_64
 ```
 
 具体依赖、自动发现规则、输出文件和验证步骤见 [Windows 便携包说明](packaging/portable/windows/README.md)。macOS 交叉构建脚本只生成带 `-dev` 标记的开发包；正式发布必须使用目标平台原生流水线。原生构建脚本会运行目标平台测试、部署实际需要的 Qt 模块，并生成发布清单、SBOM 和校验和。

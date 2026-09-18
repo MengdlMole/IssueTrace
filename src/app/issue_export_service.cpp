@@ -152,6 +152,28 @@ void writeText(const std::filesystem::path& path, const std::string& content) {
     if (!output) throw std::runtime_error("Markdown 文件写入失败");
 }
 
+void publishExportDirectory(const std::filesystem::path& staging,
+                            const std::filesystem::path& target) {
+    // Publish files into their final paths instead of renaming the whole
+    // staging directory. Obsidian and similar vault watchers reliably receive
+    // per-file creation events this way; a directory-only rename can leave the
+    // Markdown files invisible until the user moves the folder again.
+    std::filesystem::create_directories(target / "图片");
+    std::filesystem::create_directories(target / "附件");
+    for (const auto& category : {std::filesystem::path("图片"),
+                                 std::filesystem::path("附件")}) {
+        for (const auto& item : std::filesystem::directory_iterator(staging / category)) {
+            if (!item.is_regular_file()) continue;
+            std::filesystem::copy_file(item.path(), target / category /
+                item.path().filename());
+        }
+    }
+    // Write Markdown last so a vault never observes a note before its linked
+    // images and attachments are present.
+    std::filesystem::copy_file(staging / "事件记录.md", target / "事件记录.md");
+    std::filesystem::copy_file(staging / "事件总结.md", target / "事件总结.md");
+}
+
 }  // namespace
 
 std::filesystem::path IssueExportService::exportMarkdown(
@@ -214,11 +236,13 @@ std::filesystem::path IssueExportService::exportMarkdown(
         writeText(temporary / "事件记录.md", record.str());
         writeText(temporary / "事件总结.md",
                   renderSummary(store, issue, form, summaryTemplate));
-        std::filesystem::rename(temporary, target);
+        publishExportDirectory(temporary, target);
+        std::filesystem::remove_all(temporary);
         return target;
     } catch (...) {
         std::error_code ignored;
         std::filesystem::remove_all(temporary, ignored);
+        std::filesystem::remove_all(target, ignored);
         throw;
     }
 }
