@@ -213,6 +213,7 @@ if(ISSUETRACE_BUILD_DESKTOP)
             qml/IssueEditorList.qml
             qml/TimelineComposer.qml
             qml/TimelineList.qml
+            qml/TrashDialog.qml
     )
     qt_add_resources(IssueTrace issuetrace_resources
         PREFIX "/issuetrace"
@@ -302,6 +303,13 @@ if(ISSUETRACE_BUILD_DESKTOP)
                 $<TARGET_FILE:IssueTrace> --verify-explicit-metadata-save
         )
         set_tests_properties(issuetrace_explicit_metadata_save_smoke PROPERTIES TIMEOUT 15)
+        add_test(NAME issuetrace_lifecycle_calendar_smoke
+            COMMAND "${CMAKE_COMMAND}" -E env
+                QT_QPA_PLATFORM=offscreen
+                ISSUETRACE_WORKSPACE=${CMAKE_CURRENT_BINARY_DIR}/lifecycle-calendar-workspace
+                $<TARGET_FILE:IssueTrace> --verify-lifecycle-calendar
+        )
+        set_tests_properties(issuetrace_lifecycle_calendar_smoke PROPERTIES TIMEOUT 15)
         add_test(NAME issuetrace_two_pane_navigation_smoke
             COMMAND "${CMAKE_COMMAND}" -E env
                 QT_QPA_PLATFORM=offscreen

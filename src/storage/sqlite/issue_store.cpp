@@ -123,13 +123,32 @@ StoredIssue readIssue(sqlite3_stmt* statement) {
     if (sqlite3_column_type(statement, 20) != SQLITE_NULL) {
         issue.timerStartedAt = sqlite3_column_int64(statement, 20);
     }
+    if (sqlite3_column_type(statement, 21) != SQLITE_NULL) {
+        issue.deletedAt = sqlite3_column_int64(statement, 21);
+    }
     return issue;
+}
+
+TimelineEntry readTimelineEntry(sqlite3_stmt* statement) {
+    TimelineEntry entry;
+    entry.id = columnText(statement, 0);
+    entry.issueId = columnText(statement, 1);
+    entry.type = columnText(statement, 2);
+    entry.contentMarkdown = columnText(statement, 3);
+    entry.occurredAt = sqlite3_column_int64(statement, 4);
+    entry.createdAt = sqlite3_column_int64(statement, 5);
+    entry.updatedAt = sqlite3_column_int64(statement, 6);
+    if (sqlite3_column_type(statement, 7) != SQLITE_NULL) {
+        entry.deletedAt = sqlite3_column_int64(statement, 7);
+    }
+    return entry;
 }
 
 constexpr const char* issueColumns =
     "id,title,original_problem,reporter,assignee,service,version,ticket,status,"
     "priority,conclusion,reported_at,resolved_at,created_at,updated_at,"
-    "status_changed_at,remind_at,group_name,tags,tracked_milliseconds,timer_started_at";
+    "status_changed_at,remind_at,group_name,tags,tracked_milliseconds,timer_started_at,"
+    "deleted_at";
 
 void bindText(sqlite3_stmt* statement, const int index,
               const std::string& value) {
@@ -249,6 +268,18 @@ bool safeAttachmentPath(const std::filesystem::path& relative) {
     if (normalized.empty() || *normalized.begin() != "attachments") return false;
     for (const auto& part : normalized) {
         if (part == "..") return false;
+    }
+    return true;
+}
+
+bool safeStorageId(const std::string& value) {
+    if (value.empty()) return false;
+    for (const unsigned char character : value) {
+        if (!((character >= 'a' && character <= 'z') ||
+              (character >= 'A' && character <= 'Z') ||
+              (character >= '0' && character <= '9') || character == '-')) {
+            return false;
+        }
     }
     return true;
 }
@@ -422,7 +453,7 @@ public:
         std::optional<std::filesystem::path> preMigrationBackup;
         try {
             execute(db_, "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; "
-                         "PRAGMA synchronous=NORMAL;");
+                         "PRAGMA synchronous=NORMAL; PRAGMA secure_delete=ON;");
             const auto existingVersion = existingSchemaVersion(db_);
             if (existingVersion && *existingVersion > kSchemaVersion) {
                 throw std::runtime_error(
@@ -789,12 +820,19 @@ void IssueStore::updateIssue(const StoredIssue& issue) {
     if (issue.title.find_first_not_of(" \t\r\n") == std::string::npos) {
         throw std::invalid_argument("事件内容不能为空");
     }
+    if (issue.createdAt <= 0) {
+        throw std::invalid_argument("事件创建时间无效");
+    }
+    if (issue.resolvedAt && *issue.resolvedAt < issue.createdAt) {
+        throw std::invalid_argument("事件解决时间不能早于创建时间");
+    }
     execute(impl_->db_, "BEGIN IMMEDIATE");
     try {
     Statement statement(impl_->db_,
         "UPDATE issues SET title=?,original_problem=?,reporter=?,assignee=?,service=?,"
         "version=?,ticket=?,status=?,priority=?,group_name=?,tags=?,conclusion=?,reported_at=?,resolved_at=?,"
-        "updated_at=?,status_changed_at=?,remind_at=? WHERE id=? AND deleted_at IS NULL");
+        "created_at=?,updated_at=?,status_changed_at=?,remind_at=? "
+        "WHERE id=? AND deleted_at IS NULL");
     const std::array<const std::string*, 12> values{
         &issue.title, &issue.originalProblem, &issue.reporter, &issue.assignee,
         &issue.service, &issue.version, &issue.ticket, &issue.status,
@@ -804,6 +842,7 @@ void IssueStore::updateIssue(const StoredIssue& issue) {
     sqlite3_bind_int64(statement.get(), index++, issue.reportedAt);
     if (issue.resolvedAt) sqlite3_bind_int64(statement.get(), index++, *issue.resolvedAt);
     else sqlite3_bind_null(statement.get(), index++);
+    sqlite3_bind_int64(statement.get(), index++, issue.createdAt);
     sqlite3_bind_int64(statement.get(), index++, nowMilliseconds());
     sqlite3_bind_int64(statement.get(), index++, issue.statusChangedAt);
     if (issue.remindAt) sqlite3_bind_int64(statement.get(), index++, *issue.remindAt);
@@ -921,12 +960,16 @@ void IssueStore::softDeleteIssue(const std::string& id) {
     execute(impl_->db_, "BEGIN IMMEDIATE");
     try {
     Statement statement(impl_->db_,
-                        "UPDATE issues SET deleted_at=?,updated_at=? "
+                        "UPDATE issues SET deleted_at=?,updated_at=?,"
+                        "tracked_milliseconds=tracked_milliseconds+CASE "
+                        "WHEN timer_started_at IS NULL THEN 0 ELSE MAX(0,?-timer_started_at) END,"
+                        "timer_started_at=NULL "
                         "WHERE id=? AND deleted_at IS NULL");
     const auto now = nowMilliseconds();
     sqlite3_bind_int64(statement.get(), 1, now);
     sqlite3_bind_int64(statement.get(), 2, now);
-    bindText(statement.get(), 3, id);
+    sqlite3_bind_int64(statement.get(), 3, now);
+    bindText(statement.get(), 4, id);
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(sqlite3_errmsg(impl_->db_));
     }
@@ -963,6 +1006,103 @@ void IssueStore::restoreIssue(const std::string& id) {
     }
 }
 
+void IssueStore::permanentlyDeleteIssue(const std::string& id) {
+    Statement deleted(impl_->db_,
+        "SELECT 1 FROM issues WHERE id=? AND deleted_at IS NOT NULL");
+    bindText(deleted.get(), 1, id);
+    if (sqlite3_step(deleted.get()) != SQLITE_ROW) {
+        throw std::runtime_error("Deleted issue does not exist");
+    }
+
+    Statement attachmentPaths(impl_->db_,
+        "SELECT a.relative_path FROM attachments a JOIN timeline_entries t "
+        "ON t.id=a.timeline_entry_id WHERE t.issue_id=?");
+    bindText(attachmentPaths.get(), 1, id);
+    std::vector<std::filesystem::path> paths;
+    while (sqlite3_step(attachmentPaths.get()) == SQLITE_ROW) {
+        const std::filesystem::path relative{columnText(attachmentPaths.get(), 0)};
+        if (!safeAttachmentPath(relative)) {
+            throw std::runtime_error("附件路径不安全，已停止永久删除");
+        }
+        paths.push_back(impl_->root_ / relative);
+    }
+
+    const auto staging = impl_->root_ / "attachments" /
+        (".purge-" + createUuid());
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> moved;
+    const auto restoreFiles = [&moved, &staging] {
+        std::error_code ignored;
+        for (auto item = moved.rbegin(); item != moved.rend(); ++item) {
+            std::filesystem::create_directories(item->first.parent_path(), ignored);
+            std::filesystem::rename(item->second, item->first, ignored);
+        }
+        std::filesystem::remove_all(staging, ignored);
+    };
+    try {
+        for (const auto& source : paths) {
+            if (!std::filesystem::exists(source)) continue;
+            if (!std::filesystem::is_regular_file(source) ||
+                std::filesystem::is_symlink(source)) {
+                throw std::runtime_error("附件不是安全的普通文件，已停止永久删除");
+            }
+            std::filesystem::create_directories(staging);
+            const auto destination = staging / createUuid();
+            std::filesystem::rename(source, destination);
+            moved.emplace_back(source, destination);
+        }
+    } catch (...) {
+        restoreFiles();
+        throw;
+    }
+
+    execute(impl_->db_, "BEGIN IMMEDIATE");
+    try {
+        Statement removeSearch(impl_->db_, "DELETE FROM issue_search WHERE issue_id=?");
+        bindText(removeSearch.get(), 1, id);
+        if (sqlite3_step(removeSearch.get()) != SQLITE_DONE) {
+            throw std::runtime_error(sqlite3_errmsg(impl_->db_));
+        }
+        Statement removeSummary(impl_->db_, "DELETE FROM summary_drafts WHERE issue_id=?");
+        bindText(removeSummary.get(), 1, id);
+        if (sqlite3_step(removeSummary.get()) != SQLITE_DONE) {
+            throw std::runtime_error(sqlite3_errmsg(impl_->db_));
+        }
+        Statement removeAttachments(impl_->db_,
+            "DELETE FROM attachments WHERE timeline_entry_id IN("
+            "SELECT id FROM timeline_entries WHERE issue_id=?)");
+        bindText(removeAttachments.get(), 1, id);
+        if (sqlite3_step(removeAttachments.get()) != SQLITE_DONE) {
+            throw std::runtime_error(sqlite3_errmsg(impl_->db_));
+        }
+        Statement removeTimeline(impl_->db_,
+            "DELETE FROM timeline_entries WHERE issue_id=?");
+        bindText(removeTimeline.get(), 1, id);
+        if (sqlite3_step(removeTimeline.get()) != SQLITE_DONE) {
+            throw std::runtime_error(sqlite3_errmsg(impl_->db_));
+        }
+        Statement removeIssue(impl_->db_,
+            "DELETE FROM issues WHERE id=? AND deleted_at IS NOT NULL");
+        bindText(removeIssue.get(), 1, id);
+        if (sqlite3_step(removeIssue.get()) != SQLITE_DONE ||
+            sqlite3_changes(impl_->db_) != 1) {
+            throw std::runtime_error("Deleted issue does not exist");
+        }
+        execute(impl_->db_, "COMMIT");
+    } catch (...) {
+        execute(impl_->db_, "ROLLBACK");
+        restoreFiles();
+        throw;
+    }
+    std::error_code ignored;
+    std::filesystem::remove_all(staging, ignored);
+    for (const auto& path : paths) std::filesystem::remove(path.parent_path(), ignored);
+    const auto issueDirectory = impl_->root_ / "attachments" / id;
+    if (safeStorageId(id) &&
+        pathIsWithin(issueDirectory, impl_->root_ / "attachments")) {
+        std::filesystem::remove_all(issueDirectory, ignored);
+    }
+}
+
 TimelineEntry IssueStore::createTimelineEntry(const std::string& issueId,
                                               std::string type,
                                               std::string contentMarkdown) {
@@ -972,7 +1112,7 @@ TimelineEntry IssueStore::createTimelineEntry(const std::string& issueId,
     if (type.empty()) type = "note";
     const auto now = nowMilliseconds();
     TimelineEntry entry{createUuid(), issueId, std::move(type),
-                        std::move(contentMarkdown), now, now, now};
+                        std::move(contentMarkdown), now, now, now, std::nullopt};
     execute(impl_->db_, "BEGIN IMMEDIATE");
     try {
         Statement insert(impl_->db_,
@@ -1008,43 +1148,55 @@ TimelineEntry IssueStore::createTimelineEntry(const std::string& issueId,
 std::vector<TimelineEntry> IssueStore::listTimelineEntries(
     const std::string& issueId) const {
     Statement statement(impl_->db_,
-        "SELECT id,issue_id,type,content_markdown,occurred_at,created_at,updated_at "
+        "SELECT id,issue_id,type,content_markdown,occurred_at,created_at,updated_at,"
+        "deleted_at "
                             "FROM timeline_entries WHERE issue_id=? AND deleted_at IS NULL "
                             "AND type<>'_description_attachment' "
         "ORDER BY occurred_at DESC,rowid DESC");
     bindText(statement.get(), 1, issueId);
     std::vector<TimelineEntry> result;
     while (sqlite3_step(statement.get()) == SQLITE_ROW) {
-        TimelineEntry entry;
-        entry.id = columnText(statement.get(), 0);
-        entry.issueId = columnText(statement.get(), 1);
-        entry.type = columnText(statement.get(), 2);
-        entry.contentMarkdown = columnText(statement.get(), 3);
-        entry.occurredAt = sqlite3_column_int64(statement.get(), 4);
-        entry.createdAt = sqlite3_column_int64(statement.get(), 5);
-        entry.updatedAt = sqlite3_column_int64(statement.get(), 6);
-        result.push_back(std::move(entry));
+        result.push_back(readTimelineEntry(statement.get()));
+    }
+    return result;
+}
+
+std::vector<TimelineEntry> IssueStore::listDeletedTimelineEntries() const {
+    Statement statement(impl_->db_,
+        "SELECT t.id,t.issue_id,t.type,t.content_markdown,t.occurred_at,t.created_at,"
+        "t.updated_at,t.deleted_at FROM timeline_entries t JOIN issues i "
+        "ON i.id=t.issue_id WHERE t.deleted_at IS NOT NULL "
+        "AND t.type<>'_description_attachment' AND i.deleted_at IS NULL "
+        "ORDER BY t.deleted_at DESC,t.id");
+    std::vector<TimelineEntry> result;
+    while (sqlite3_step(statement.get()) == SQLITE_ROW) {
+        result.push_back(readTimelineEntry(statement.get()));
     }
     return result;
 }
 
 void IssueStore::updateTimelineEntry(const std::string& id, std::string type,
-                                     std::string contentMarkdown) {
+                                     std::string contentMarkdown,
+                                     const std::int64_t occurredAt) {
     if (contentMarkdown.find_first_not_of(" \t\r\n") == std::string::npos) {
         throw std::invalid_argument("记录内容不能为空");
     }
     if (type.empty()) type = "note";
+    if (occurredAt <= 0 || occurredAt > nowMilliseconds()) {
+        throw std::invalid_argument("记录时间无效或晚于当前时间");
+    }
     const auto issueId = issueIdForTimelineEntry(impl_->db_, id);
     const auto now = nowMilliseconds();
     execute(impl_->db_, "BEGIN IMMEDIATE");
     try {
         Statement statement(impl_->db_,
-            "UPDATE timeline_entries SET type=?,content_markdown=?,updated_at=? "
+            "UPDATE timeline_entries SET type=?,content_markdown=?,occurred_at=?,updated_at=? "
             "WHERE id=? AND deleted_at IS NULL");
         bindText(statement.get(), 1, type);
         bindText(statement.get(), 2, contentMarkdown);
-        sqlite3_bind_int64(statement.get(), 3, now);
-        bindText(statement.get(), 4, id);
+        sqlite3_bind_int64(statement.get(), 3, occurredAt);
+        sqlite3_bind_int64(statement.get(), 4, now);
+        bindText(statement.get(), 5, id);
         if (sqlite3_step(statement.get()) != SQLITE_DONE ||
             sqlite3_changes(impl_->db_) != 1) {
             throw std::runtime_error("Timeline entry does not exist");
@@ -1096,6 +1248,122 @@ void IssueStore::softDeleteTimelineEntry(const std::string& id) {
         execute(impl_->db_, "ROLLBACK");
         throw;
     }
+}
+
+void IssueStore::restoreTimelineEntry(const std::string& id) {
+    const auto issueId = issueIdForTimelineEntry(impl_->db_, id);
+    const auto now = nowMilliseconds();
+    execute(impl_->db_, "BEGIN IMMEDIATE");
+    try {
+        Statement restore(impl_->db_,
+            "UPDATE timeline_entries SET deleted_at=NULL,updated_at=? "
+            "WHERE id=? AND deleted_at IS NOT NULL AND issue_id IN("
+            "SELECT id FROM issues WHERE deleted_at IS NULL)");
+        sqlite3_bind_int64(restore.get(), 1, now);
+        bindText(restore.get(), 2, id);
+        if (sqlite3_step(restore.get()) != SQLITE_DONE ||
+            sqlite3_changes(impl_->db_) != 1) {
+            throw std::runtime_error("Deleted timeline entry does not exist");
+        }
+        Statement touch(impl_->db_,
+            "UPDATE issues SET updated_at=? WHERE id=? AND deleted_at IS NULL");
+        sqlite3_bind_int64(touch.get(), 1, now);
+        bindText(touch.get(), 2, issueId);
+        if (sqlite3_step(touch.get()) != SQLITE_DONE ||
+            sqlite3_changes(impl_->db_) != 1) {
+            throw std::runtime_error("Issue does not exist");
+        }
+        refreshSearchDocument(impl_->db_, issueId);
+        execute(impl_->db_, "COMMIT");
+    } catch (...) {
+        execute(impl_->db_, "ROLLBACK");
+        throw;
+    }
+}
+
+void IssueStore::permanentlyDeleteTimelineEntry(const std::string& id) {
+    Statement owner(impl_->db_,
+        "SELECT t.issue_id FROM timeline_entries t JOIN issues i ON i.id=t.issue_id "
+        "WHERE t.id=? AND t.deleted_at IS NOT NULL AND i.deleted_at IS NULL");
+    bindText(owner.get(), 1, id);
+    if (sqlite3_step(owner.get()) != SQLITE_ROW) {
+        throw std::runtime_error("Deleted timeline entry does not exist");
+    }
+    const auto issueId = columnText(owner.get(), 0);
+
+    Statement attachmentPaths(impl_->db_,
+        "SELECT relative_path FROM attachments WHERE timeline_entry_id=?");
+    bindText(attachmentPaths.get(), 1, id);
+    std::vector<std::filesystem::path> paths;
+    while (sqlite3_step(attachmentPaths.get()) == SQLITE_ROW) {
+        const std::filesystem::path relative{columnText(attachmentPaths.get(), 0)};
+        if (!safeAttachmentPath(relative)) {
+            throw std::runtime_error("附件路径不安全，已停止永久删除");
+        }
+        paths.push_back(impl_->root_ / relative);
+    }
+    const auto staging = impl_->root_ / "attachments" /
+        (".purge-" + createUuid());
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> moved;
+    const auto restoreFiles = [&moved, &staging] {
+        std::error_code ignored;
+        for (auto item = moved.rbegin(); item != moved.rend(); ++item) {
+            std::filesystem::create_directories(item->first.parent_path(), ignored);
+            std::filesystem::rename(item->second, item->first, ignored);
+        }
+        std::filesystem::remove_all(staging, ignored);
+    };
+    try {
+        for (const auto& source : paths) {
+            if (!std::filesystem::exists(source)) continue;
+            if (!std::filesystem::is_regular_file(source) ||
+                std::filesystem::is_symlink(source)) {
+                throw std::runtime_error("附件不是安全的普通文件，已停止永久删除");
+            }
+            std::filesystem::create_directories(staging);
+            const auto destination = staging / createUuid();
+            std::filesystem::rename(source, destination);
+            moved.emplace_back(source, destination);
+        }
+    } catch (...) {
+        restoreFiles();
+        throw;
+    }
+
+    const auto now = nowMilliseconds();
+    execute(impl_->db_, "BEGIN IMMEDIATE");
+    try {
+        Statement removeAttachments(impl_->db_,
+            "DELETE FROM attachments WHERE timeline_entry_id=?");
+        bindText(removeAttachments.get(), 1, id);
+        if (sqlite3_step(removeAttachments.get()) != SQLITE_DONE) {
+            throw std::runtime_error(sqlite3_errmsg(impl_->db_));
+        }
+        Statement removeEntry(impl_->db_,
+            "DELETE FROM timeline_entries WHERE id=? AND deleted_at IS NOT NULL");
+        bindText(removeEntry.get(), 1, id);
+        if (sqlite3_step(removeEntry.get()) != SQLITE_DONE ||
+            sqlite3_changes(impl_->db_) != 1) {
+            throw std::runtime_error("Deleted timeline entry does not exist");
+        }
+        Statement touch(impl_->db_,
+            "UPDATE issues SET updated_at=? WHERE id=? AND deleted_at IS NULL");
+        sqlite3_bind_int64(touch.get(), 1, now);
+        bindText(touch.get(), 2, issueId);
+        if (sqlite3_step(touch.get()) != SQLITE_DONE ||
+            sqlite3_changes(impl_->db_) != 1) {
+            throw std::runtime_error("Issue does not exist");
+        }
+        refreshSearchDocument(impl_->db_, issueId);
+        execute(impl_->db_, "COMMIT");
+    } catch (...) {
+        execute(impl_->db_, "ROLLBACK");
+        restoreFiles();
+        throw;
+    }
+    std::error_code ignored;
+    std::filesystem::remove_all(staging, ignored);
+    for (const auto& path : paths) std::filesystem::remove(path.parent_path(), ignored);
 }
 
 std::string IssueStore::currentProgress(const std::string& issueId) const {

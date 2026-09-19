@@ -32,6 +32,7 @@ struct StoredIssue {
     std::optional<std::int64_t> remindAt;
     std::int64_t trackedMilliseconds{};
     std::optional<std::int64_t> timerStartedAt;
+    std::optional<std::int64_t> deletedAt;
 };
 
 struct TimelineEntry {
@@ -42,6 +43,7 @@ struct TimelineEntry {
     std::int64_t occurredAt{};
     std::int64_t createdAt{};
     std::int64_t updatedAt{};
+    std::optional<std::int64_t> deletedAt;
 };
 
 struct Attachment {
@@ -123,13 +125,18 @@ public:
     [[nodiscard]] std::vector<std::string> distinctGroups() const;
     void softDeleteIssue(const std::string& id);
     void restoreIssue(const std::string& id);
+    void permanentlyDeleteIssue(const std::string& id);
     [[nodiscard]] TimelineEntry createTimelineEntry(
         const std::string& issueId, std::string type, std::string contentMarkdown);
     [[nodiscard]] std::vector<TimelineEntry> listTimelineEntries(
         const std::string& issueId) const;
+    [[nodiscard]] std::vector<TimelineEntry> listDeletedTimelineEntries() const;
     void updateTimelineEntry(const std::string& id, std::string type,
-                             std::string contentMarkdown);
+                             std::string contentMarkdown,
+                             std::int64_t occurredAt);
     void softDeleteTimelineEntry(const std::string& id);
+    void restoreTimelineEntry(const std::string& id);
+    void permanentlyDeleteTimelineEntry(const std::string& id);
     [[nodiscard]] std::string currentProgress(const std::string& issueId) const;
     [[nodiscard]] Attachment addAttachment(
         const std::string& timelineEntryId, const std::string& originalName,

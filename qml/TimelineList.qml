@@ -7,6 +7,7 @@ ListView {
     id: root
     required property var controller
     required property var typeOptions
+    signal deleteRequested(string entryId, string preview)
 
     function typeLabel(value) {
         for (let i = 0; i < typeOptions.length; ++i)
@@ -42,11 +43,20 @@ ListView {
                 Label { text: modelData.occurredAt; color: palette.mid; Layout.fillWidth: true }
                 QuietButton {
                     text: editing ? "取消" : "编辑"
-                    onClicked: editing = !editing
+                    onClicked: {
+                        if (editing) {
+                            editing = false
+                        } else {
+                            editContent.text = modelData.content
+                            editOccurredAt.text = modelData.occurredAt
+                            editing = true
+                        }
+                    }
                 }
                 QuietButton {
+                    objectName: "timelineDeleteButton"
                     text: "删除"
-                    onClicked: root.controller.deleteTimelineEntry(modelData.id)
+                    onClicked: root.deleteRequested(modelData.id, modelData.content)
                 }
             }
             Label {
@@ -64,12 +74,31 @@ ListView {
                 wrapMode: TextEdit.Wrap
                 implicitHeight: Math.max(80, contentHeight + 20)
             }
+            RowLayout {
+                visible: editing
+                Layout.fillWidth: true
+                Label { text: "记录时间"; font.bold: true }
+                TextField {
+                    id: editOccurredAt
+                    objectName: "timelineOccurredAtEditor"
+                    Layout.fillWidth: true
+                    text: modelData.occurredAt
+                    placeholderText: "yyyy-MM-dd HH:mm:ss"
+                    selectByMouse: true
+                }
+                Label {
+                    text: "本机时区"
+                    color: palette.mid
+                    font.pixelSize: 11
+                }
+            }
             Button {
                 visible: editing
                 text: "保存"
                 highlighted: true
                 onClicked: if (root.controller.saveTimelineEntry(
-                    modelData.id, modelData.type, editContent.text)) editing = false
+                    modelData.id, modelData.type, editContent.text,
+                    editOccurredAt.text)) editing = false
             }
             Repeater {
                 model: modelData.attachments

@@ -26,6 +26,7 @@ Pane {
     }
     signal issueRequested(string issueId)
     signal editIssueRequested(string issueId)
+    signal deleteIssueRequested(string issueId, string issueTitle)
     signal filterRequested(string text, string status, string priority, string tags,
                            int minimumMinutes, int maximumMinutes, string groupPath,
                            string service, string version, string ticket, string sort)
@@ -771,6 +772,15 @@ Pane {
                                         onClicked: root.editIssueRequested(issueCard.issue.id)
                                         ToolTip.visible: hovered
                                         ToolTip.text: "编辑事件信息"
+                                    }
+                                    QuietButton {
+                                        objectName: "managementDeleteIssueButton"
+                                        text: "删除"
+                                        Layout.preferredHeight: 28
+                                        onClicked: root.deleteIssueRequested(
+                                            issueCard.issue.id, issueCard.issue.title)
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "删除事件"
                                     }
                                 }
                                 Flow {

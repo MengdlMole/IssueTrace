@@ -18,6 +18,8 @@ class AppController final : public QObject {
     Q_PROPERTY(QVariantList attentionIssues READ attentionIssues NOTIFY attentionChanged)
     Q_PROPERTY(QVariantList editorIssues READ editorIssues NOTIFY editorIssuesChanged)
     Q_PROPERTY(QVariantList calendarIssues READ calendarIssues NOTIFY calendarIssuesChanged)
+    Q_PROPERTY(QVariantList trashIssues READ trashIssues NOTIFY trashChanged)
+    Q_PROPERTY(QVariantList trashTimelineEntries READ trashTimelineEntries NOTIFY trashChanged)
     Q_PROPERTY(QVariantList issueGroups READ issueGroups NOTIFY issueGroupsChanged)
     Q_PROPERTY(QVariantMap selectedIssue READ selectedIssue NOTIFY selectedIssueChanged)
     Q_PROPERTY(QString selectedIssueStatus READ selectedIssueStatus NOTIFY selectedIssueChanged)
@@ -40,6 +42,8 @@ public:
     [[nodiscard]] QVariantList attentionIssues() const { return attentionIssues_; }
     [[nodiscard]] QVariantList editorIssues() const { return editorIssues_; }
     [[nodiscard]] QVariantList calendarIssues() const { return calendarIssues_; }
+    [[nodiscard]] QVariantList trashIssues() const { return trashIssues_; }
+    [[nodiscard]] QVariantList trashTimelineEntries() const { return trashTimelineEntries_; }
     [[nodiscard]] QVariantList issueGroups() const { return issueGroups_; }
     [[nodiscard]] QVariantMap selectedIssue() const { return selectedIssue_; }
     [[nodiscard]] QString selectedIssueStatus() const {
@@ -69,6 +73,9 @@ public:
                                       const QString& ticket = {});
     Q_INVOKABLE void selectIssue(const QString& id);
     Q_INVOKABLE bool saveIssue(const QVariantMap& values);
+    Q_INVOKABLE bool deleteIssue(const QString& id);
+    Q_INVOKABLE bool restoreIssue(const QString& id);
+    Q_INVOKABLE bool permanentlyDeleteIssue(const QString& id);
     Q_INVOKABLE bool moveIssueGroup(const QString& sourcePath,
                                     const QString& targetPath,
                                     const QString& placement);
@@ -79,8 +86,11 @@ public:
                                                const QString& content,
                                                const QVariantList& files);
     Q_INVOKABLE bool saveTimelineEntry(const QString& id, const QString& type,
-                                       const QString& content);
+                                       const QString& content,
+                                       const QString& occurredAt);
     Q_INVOKABLE void deleteTimelineEntry(const QString& id);
+    Q_INVOKABLE bool restoreTimelineEntry(const QString& id);
+    Q_INVOKABLE bool permanentlyDeleteTimelineEntry(const QString& id);
     Q_INVOKABLE void pasteScreenshot(const QString& timelineEntryId);
     Q_INVOKABLE void attachFile(const QString& timelineEntryId,
                                 const QUrl& sourceFile);
@@ -90,6 +100,7 @@ public:
     Q_INVOKABLE bool addDescriptionImage(const QUrl& sourceFile);
     Q_INVOKABLE void chooseWorkspace(const QUrl& folder);
     Q_INVOKABLE void refreshIssues();
+    Q_INVOKABLE void refreshTrash();
     Q_INVOKABLE bool setSelectedIssueStatus(const QString& status);
     Q_INVOKABLE bool remindSelectedIssueIn(int minutes);
     Q_INVOKABLE bool remindSelectedIssueAt(const QString& localDateTime);
@@ -132,6 +143,7 @@ signals:
     void attentionChanged();
     void editorIssuesChanged();
     void calendarIssuesChanged();
+    void trashChanged();
     void issueGroupsChanged();
     void issueGroupMoved(const QString& sourcePath, const QString& destinationPath);
     void selectedIssueChanged();
@@ -151,6 +163,7 @@ private:
     void activateFormTemplate(FormTemplateDefinition definition);
     void setStatus(QString value);
     void setSelected(const issuetrace::StoredIssue& issue);
+    void refreshSelectedIssue();
     void refreshTimeline();
     void refreshDescriptionAttachments();
     void refreshAttention();
@@ -164,6 +177,8 @@ private:
     QVariantList attentionIssues_;
     QVariantList editorIssues_;
     QVariantList calendarIssues_;
+    QVariantList trashIssues_;
+    QVariantList trashTimelineEntries_;
     QVariantList issueGroups_;
     QVariantMap selectedIssue_;
     QVariantList timeline_;

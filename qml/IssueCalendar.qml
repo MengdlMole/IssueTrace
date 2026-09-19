@@ -9,6 +9,7 @@ Pane {
     required property var statusOptions
     property date displayedMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
     property date selectedDate: new Date()
+    property string displayMode: "received"
     signal issueRequested(string issueId)
 
     function dateKey(value) { return Qt.formatDate(value, "yyyy-MM-dd") }
@@ -21,12 +22,31 @@ Pane {
     function issuesForDate(value) {
         const key = dateKey(value)
         const result = []
+        const dayStart = new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime()
+        const dayEnd = new Date(value.getFullYear(), value.getMonth(), value.getDate() + 1).getTime() - 1
         for (let i = 0; i < controller.calendarIssues.length; ++i) {
             const issue = controller.calendarIssues[i]
-            if ((issue.reportedAt || "").substring(0, 10) === key) result.push(issue)
+            if (displayMode === "received") {
+                if ((issue.reportedAt || "").substring(0, 10) === key) result.push(issue)
+            } else {
+                const start = Number(issue.createdAtMs || 0)
+                const resolved = Number(issue.resolvedAtMs || 0)
+                const end = resolved > 0 ? resolved : Date.now()
+                if (start <= dayEnd && Math.max(start, end) >= dayStart)
+                    result.push(issue)
+            }
         }
-        result.sort((left, right) => Number(left.reportedAtMs) - Number(right.reportedAtMs))
+        result.sort((left, right) => displayMode === "received"
+            ? Number(left.reportedAtMs) - Number(right.reportedAtMs)
+            : Number(left.createdAtMs) - Number(right.createdAtMs))
         return result
+    }
+    function issueTimeLabel(issue) {
+        if (displayMode === "received")
+            return (issue.reportedAt || "").substring(11)
+                + (issue.group_name ? " · " + issue.group_name : "")
+        const end = issue.resolvedAt ? issue.resolvedAt : "进行中"
+        return (issue.createdAt || "") + " → " + end
     }
     function statusLabel(value) {
         for (let i = 0; i < statusOptions.length; ++i)
@@ -56,8 +76,22 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             Label { text: "事件日历"; font.pixelSize: 23; font.bold: true }
-            Label { text: "按接收日期回顾每天处理的事件"; color: palette.mid }
+            Label {
+                text: root.displayMode === "received"
+                    ? "按接收日期回顾每天的事件"
+                    : "查看事件从创建到完成的持续区间"
+                color: palette.mid
+            }
             Item { Layout.fillWidth: true }
+            ComboBox {
+                id: calendarMode
+                objectName: "calendarDisplayMode"
+                model: [{value:"received",label:"按接收日"},
+                        {value:"active_range",label:"按处理区间"}]
+                textRole: "label"
+                valueRole: "value"
+                onActivated: root.displayMode = currentValue
+            }
             Button { text: "今天"; onClicked: root.showToday() }
             ToolButton { text: "‹"; onClicked: root.showPreviousMonth() }
             Label {
@@ -193,6 +227,7 @@ Pane {
                     Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: palette.midlight }
                     ListView {
                         id: dayEventList
+                        objectName: "calendarDayEventList"
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         spacing: 6
@@ -221,8 +256,7 @@ Pane {
                                 }
                                 Label {
                                     Layout.fillWidth: true
-                                    text: (modelData.reportedAt || "").substring(11)
-                                        + (modelData.group_name ? " · " + modelData.group_name : "")
+                                    text: root.issueTimeLabel(modelData)
                                     color: palette.mid
                                     font.pixelSize: 11
                                     elide: Text.ElideRight
@@ -232,7 +266,9 @@ Pane {
                         Label {
                             anchors.centerIn: parent
                             visible: dayEventList.count === 0
-                            text: "这一天没有收到事件"
+                            text: root.displayMode === "received"
+                                ? "这一天没有收到事件"
+                                : "这一天没有处理中的事件"
                             color: palette.mid
                         }
                     }

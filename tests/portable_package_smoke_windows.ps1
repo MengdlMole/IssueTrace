@@ -76,6 +76,8 @@ try {
         Invoke-Checked (Join-Path $installRoot "IssueTrace.exe") --verify-custom-reminder
         $env:ISSUETRACE_WORKSPACE = Join-Path $TestRoot "metadata-save-workspace"
         Invoke-Checked (Join-Path $installRoot "IssueTrace.exe") --verify-explicit-metadata-save
+        $env:ISSUETRACE_WORKSPACE = Join-Path $TestRoot "lifecycle-calendar-workspace"
+        Invoke-Checked (Join-Path $installRoot "IssueTrace.exe") --verify-lifecycle-calendar
     } finally {
         $env:ISSUETRACE_EXIT_AFTER_HEALTH = $oldExitAfterHealth
         $env:ISSUETRACE_WORKSPACE = $oldWorkspace

@@ -79,4 +79,14 @@ if(NOT metadata_save_result EQUAL 0)
     message(FATAL_ERROR
         "Packaged explicit metadata save check returned ${metadata_save_result}")
 endif()
+execute_process(COMMAND "${CMAKE_COMMAND}" -E env
+    QT_QPA_PLATFORM=offscreen
+    ISSUETRACE_WORKSPACE=${TEST_ROOT}/lifecycle-calendar-workspace
+    "${install_root}/IssueTrace.app/Contents/MacOS/IssueTrace"
+    --verify-lifecycle-calendar
+    RESULT_VARIABLE lifecycle_calendar_result)
+if(NOT lifecycle_calendar_result EQUAL 0)
+    message(FATAL_ERROR
+        "Packaged lifecycle/calendar check returned ${lifecycle_calendar_result}")
+endif()
 file(REMOVE_RECURSE "${TEST_ROOT}")

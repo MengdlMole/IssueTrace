@@ -367,6 +367,177 @@ int main(int argc, char* argv[]) {
                     });
             });
     }
+    if (arguments.contains(QStringLiteral("--verify-lifecycle-calendar"))) {
+        controller.createQuickIssue(QStringLiteral("生命周期验证事件"), QString{});
+        const auto issueId = controller.selectedIssue()
+                                 .value(QStringLiteral("id")).toString();
+        auto edited = controller.selectedIssue();
+        const auto correctedCreated = QDateTime::currentDateTime().addDays(-2);
+        edited.insert(QStringLiteral("created_at"), correctedCreated.toString(
+            QStringLiteral("yyyy-MM-dd HH:mm")));
+        const auto creationSaved = controller.saveIssue(edited);
+        const auto progressAdded = controller.addTimelineEntry(
+            QStringLiteral("progress"), QStringLiteral("已完成第一步定位"));
+        const auto progressFresh = controller.selectedIssue()
+            .value(QStringLiteral("progress")).toString() ==
+            QStringLiteral("已完成第一步定位");
+        auto* details = window->findChild<QObject*>(
+            QStringLiteral("eventDetailsDialog"));
+        const auto detailsOpened = details &&
+            QMetaObject::invokeMethod(details, "open");
+        QTimer::singleShot(150, &app,
+            [&app, window, &controller, issueId, creationSaved, progressAdded,
+             progressFresh, details, detailsOpened, correctedCreated] {
+                const auto draft = details
+                    ? details->property("draftIssue").toMap() : QVariantMap{};
+                const auto detailsFresh =
+                    draft.value(QStringLiteral("progress")).toString() ==
+                        QStringLiteral("已完成第一步定位") &&
+                    draft.value(QStringLiteral("created_at")).toString() ==
+                        correctedCreated.toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+                if (details) {
+                    QMetaObject::invokeMethod(details, "discard");
+                    QMetaObject::invokeMethod(details, "close");
+                }
+
+                const auto issueConfirmRequested = QMetaObject::invokeMethod(
+                    window, "requestIssueDeletion",
+                    Q_ARG(QVariant, QVariant(issueId)),
+                    Q_ARG(QVariant, QVariant(QStringLiteral("生命周期验证事件"))));
+                auto* issueConfirm = window->findChild<QObject*>(
+                    QStringLiteral("deleteIssueConfirmDialog"));
+                const auto issueProtected = issueConfirmRequested && issueConfirm &&
+                    issueConfirm->property("visible").toBool() &&
+                    controller.selectedIssue().value(QStringLiteral("id")).toString() == issueId;
+                if (issueConfirm) QMetaObject::invokeMethod(issueConfirm, "reject");
+
+                const auto timeline = controller.timeline();
+                const auto entryId = timeline.isEmpty() ? QString{} :
+                    timeline.front().toMap().value(QStringLiteral("id")).toString();
+                const auto timelineConfirmRequested = QMetaObject::invokeMethod(
+                    window, "requestTimelineDeletion",
+                    Q_ARG(QVariant, QVariant(entryId)),
+                    Q_ARG(QVariant, QVariant(QStringLiteral("已完成第一步定位"))));
+                auto* timelineConfirm = window->findChild<QObject*>(
+                    QStringLiteral("deleteTimelineConfirmDialog"));
+                const auto timelineProtected = timelineConfirmRequested && timelineConfirm &&
+                    timelineConfirm->property("visible").toBool() &&
+                    controller.timeline().size() == 1;
+                if (timelineConfirm) QMetaObject::invokeMethod(timelineConfirm, "reject");
+
+                const auto correctedOccurred = QDateTime::currentDateTime().addSecs(-3600);
+                const auto timelineTimeSaved = controller.saveTimelineEntry(
+                    entryId, QStringLiteral("progress"),
+                    QStringLiteral("已完成第一步定位"),
+                    correctedOccurred.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")));
+                controller.deleteTimelineEntry(entryId);
+                bool deletedEntryFound = false;
+                for (const auto& value : controller.trashTimelineEntries()) {
+                    if (value.toMap().value(QStringLiteral("id")).toString() == entryId) {
+                        deletedEntryFound = true;
+                        break;
+                    }
+                }
+                const auto timelineInTrash = controller.timeline().isEmpty() &&
+                    deletedEntryFound;
+                const auto timelineRestored = controller.restoreTimelineEntry(entryId) &&
+                    controller.timeline().size() == 1 &&
+                    controller.timeline().front().toMap()
+                        .value(QStringLiteral("occurredAt")).toString() ==
+                    correctedOccurred.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+
+                auto* calendar = window->findChild<QObject*>(
+                    QStringLiteral("issueCalendar"));
+                const auto rangeDate = QDateTime::currentDateTime().addDays(-1);
+                const auto calendarConfigured = calendar &&
+                    calendar->setProperty("displayMode", QStringLiteral("active_range")) &&
+                    calendar->setProperty("selectedDate", rangeDate);
+                QTimer::singleShot(100, &app,
+                    [&app, window, &controller, issueId, creationSaved,
+                     progressAdded, progressFresh, detailsOpened, detailsFresh,
+                     issueProtected, timelineProtected, timelineTimeSaved,
+                     timelineInTrash, timelineRestored, calendarConfigured] {
+                        const auto* dayList = window->findChild<QObject*>(
+                            QStringLiteral("calendarDayEventList"));
+                        const auto rangeVisible = calendarConfigured && dayList &&
+                            dayList->property("count").toInt() >= 1;
+                        const auto deleted = controller.deleteIssue(issueId);
+                        const auto trashContainsIssue = [&controller, &issueId] {
+                            for (const auto& value : controller.trashIssues()) {
+                                if (value.toMap().value(QStringLiteral("id")).toString() ==
+                                    issueId) return true;
+                            }
+                            return false;
+                        };
+                        const auto issueInTrash = trashContainsIssue();
+                        bool stillListed = false;
+                        for (const auto& value : controller.calendarIssues()) {
+                            if (value.toMap().value(QStringLiteral("id")).toString() == issueId) {
+                                stillListed = true;
+                                break;
+                            }
+                        }
+                        auto* trash = window->findChild<QObject*>(
+                            QStringLiteral("trashDialog"));
+                        const auto trashOpened = trash &&
+                            QMetaObject::invokeMethod(trash, "open") &&
+                            trash->property("visible").toBool();
+                        if (trash) QMetaObject::invokeMethod(trash, "close");
+                        const auto restored = controller.restoreIssue(issueId);
+                        const auto restoredVisible = restored &&
+                            !trashContainsIssue();
+                        const auto deletedAgain = controller.deleteIssue(issueId);
+                        const auto permanentProtected = QMetaObject::invokeMethod(
+                            window, "requestPermanentDeletion",
+                            Q_ARG(QVariant, QVariant(QStringLiteral("issue"))),
+                            Q_ARG(QVariant, QVariant(issueId)),
+                            Q_ARG(QVariant, QVariant(QStringLiteral("生命周期验证事件"))));
+                        auto* permanentConfirm = window->findChild<QObject*>(
+                            QStringLiteral("permanentDeleteConfirmDialog"));
+                        const auto permanentDialogVisible = permanentProtected &&
+                            permanentConfirm &&
+                            permanentConfirm->property("visible").toBool() &&
+                            trashContainsIssue();
+                        if (permanentConfirm)
+                            QMetaObject::invokeMethod(permanentConfirm, "reject");
+                        const auto purged = controller.permanentlyDeleteIssue(issueId);
+                        const auto trashEmpty = !trashContainsIssue();
+                        const auto valid = creationSaved && progressAdded && progressFresh &&
+                            detailsOpened && detailsFresh && issueProtected &&
+                            timelineProtected && timelineTimeSaved && timelineInTrash &&
+                            timelineRestored && rangeVisible && deleted && issueInTrash &&
+                            !stillListed && trashOpened && restoredVisible && deletedAgain &&
+                            permanentDialogVisible && purged && trashEmpty &&
+                            controller.selectedIssue().isEmpty();
+                        if (!valid) {
+                            QTextStream(stderr)
+                                << "IssueTrace lifecycle/calendar check failed: creation="
+                                << creationSaved << ", progressAdded=" << progressAdded
+                                << ", progressFresh=" << progressFresh
+                                << ", detailsOpened=" << detailsOpened
+                                << ", detailsFresh=" << detailsFresh
+                                << ", issueProtected=" << issueProtected
+                                << ", timelineProtected=" << timelineProtected
+                                << ", timelineTimeSaved=" << timelineTimeSaved
+                                << ", timelineInTrash=" << timelineInTrash
+                                << ", timelineRestored=" << timelineRestored
+                                << ", rangeVisible=" << rangeVisible
+                                << ", deleted=" << deleted
+                                << ", issueInTrash=" << issueInTrash
+                                << ", stillListed=" << stillListed
+                                << ", trashOpened=" << trashOpened
+                                << ", restoredVisible=" << restoredVisible
+                                << ", deletedAgain=" << deletedAgain
+                                << ", permanentDialogVisible=" << permanentDialogVisible
+                                << ", purged=" << purged
+                                << ", trashEmpty=" << trashEmpty << '\n';
+                            app.exit(10);
+                            return;
+                        }
+                        app.exit(0);
+                    });
+            });
+    }
     if (arguments.contains(QStringLiteral("--verify-two-pane-navigation"))) {
         const auto token = QString::number(QCoreApplication::applicationPid());
         const auto sourceParent = QStringLiteral("支付域-") + token;

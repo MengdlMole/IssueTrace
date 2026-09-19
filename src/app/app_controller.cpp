@@ -12,6 +12,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QHash>
 #include <QImage>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -222,6 +223,18 @@ bool AppController::saveIssue(const QVariantMap& values) {
         issue->groupName = normalizedGroup(values.value(QStringLiteral("group_name")).toString());
         issue->tags = normalizedTags(values.value(QStringLiteral("tags")).toString());
         issue->conclusion = toUtf8(values, "conclusion");
+        const auto createdText = values.value(QStringLiteral("created_at")).toString().trimmed();
+        if (!createdText.isEmpty()) {
+            const auto created = QDateTime::fromString(
+                createdText, QStringLiteral("yyyy-MM-dd HH:mm"));
+            if (!created.isValid()) {
+                throw std::runtime_error("创建时间格式应为 yyyy-MM-dd HH:mm");
+            }
+            if (created > QDateTime::currentDateTime()) {
+                throw std::runtime_error("创建时间不能晚于当前时间");
+            }
+            issue->createdAt = created.toMSecsSinceEpoch();
+        }
         const auto isResolved = issue->status == "completed";
         const auto wasResolved = oldStatus == "completed";
         if (issue->status != oldStatus) {
@@ -239,6 +252,67 @@ bool AppController::saveIssue(const QVariantMap& values) {
         return true;
     } catch (const std::exception& error) {
         setStatus(QStringLiteral("保存失败：") + QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool AppController::deleteIssue(const QString& id) {
+    try {
+        if (!store_ || id.trimmed().isEmpty()) {
+            throw std::runtime_error("请选择要删除的事件");
+        }
+        const auto issueId = id.toUtf8().toStdString();
+        store_->softDeleteIssue(issueId);
+        if (toUtf8(selectedIssue_, "id") == issueId) {
+            selectedIssue_.clear();
+            timeline_.clear();
+            descriptionAttachments_.clear();
+            emit selectedIssueChanged();
+            emit timelineChanged();
+            emit descriptionAttachmentsChanged();
+        }
+        refreshIssues();
+        refreshTrash();
+        refreshFieldOptions();
+        setStatus(QStringLiteral("事件已删除，数据仍保留在工作区中"));
+        return true;
+    } catch (const std::exception& error) {
+        setStatus(QStringLiteral("删除失败：") + QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool AppController::restoreIssue(const QString& id) {
+    try {
+        if (!store_ || id.trimmed().isEmpty()) {
+            throw std::runtime_error("请选择要恢复的事件");
+        }
+        store_->restoreIssue(id.toUtf8().toStdString());
+        refreshIssues();
+        refreshTrash();
+        refreshFieldOptions();
+        setStatus(QStringLiteral("事件已从回收站恢复"));
+        return true;
+    } catch (const std::exception& error) {
+        setStatus(QStringLiteral("恢复失败：") + QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool AppController::permanentlyDeleteIssue(const QString& id) {
+    try {
+        if (!store_ || id.trimmed().isEmpty()) {
+            throw std::runtime_error("请选择要永久删除的事件");
+        }
+        store_->permanentlyDeleteIssue(id.toUtf8().toStdString());
+        refreshIssues();
+        refreshTrash();
+        refreshFieldOptions();
+        setStatus(QStringLiteral("事件及其记录和附件已永久删除"));
+        return true;
+    } catch (const std::exception& error) {
+        refreshTrash();
+        setStatus(QStringLiteral("永久删除失败：") + QString::fromUtf8(error.what()));
         return false;
     }
 }
@@ -381,6 +455,7 @@ bool AppController::addTimelineEntry(const QString& type, const QString& content
             content.trimmed().toUtf8().toStdString()));
         refreshTimeline();
         refreshIssues();
+        refreshSelectedIssue();
         setStatus(QStringLiteral("跟踪记录已添加"));
         return true;
     } catch (const std::exception& error) {
@@ -420,6 +495,7 @@ bool AppController::addTimelineEntryWithClipboardImage(const QString& type,
              static_cast<std::size_t>(bytes.size())}));
         refreshTimeline();
         refreshIssues();
+        refreshSelectedIssue();
         setStatus(QStringLiteral("截图记录已添加"));
         return true;
     } catch (const std::exception& error) {
@@ -479,6 +555,7 @@ bool AppController::addTimelineEntryWithFiles(const QString& type,
         }
         refreshTimeline();
         refreshIssues();
+        refreshSelectedIssue();
         setStatus(QStringLiteral("记录和 %1 个附件已添加").arg(pending.size()));
         return true;
     } catch (const std::exception& error) {
@@ -491,14 +568,25 @@ bool AppController::addTimelineEntryWithFiles(const QString& type,
 }
 
 bool AppController::saveTimelineEntry(const QString& id, const QString& type,
-                                      const QString& content) {
+                                      const QString& content,
+                                      const QString& occurredAt) {
     try {
         if (!store_) throw std::runtime_error("工作区尚未打开");
+        const auto occurred = QDateTime::fromString(
+            occurredAt.trimmed(), QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+        if (!occurred.isValid()) {
+            throw std::runtime_error("记录时间格式应为 yyyy-MM-dd HH:mm:ss");
+        }
+        if (occurred > QDateTime::currentDateTime()) {
+            throw std::runtime_error("记录时间不能晚于当前时间");
+        }
         store_->updateTimelineEntry(id.toUtf8().toStdString(),
                                     type.toUtf8().toStdString(),
-                                    content.trimmed().toUtf8().toStdString());
+                                    content.trimmed().toUtf8().toStdString(),
+                                    occurred.toMSecsSinceEpoch());
         refreshTimeline();
         refreshIssues();
+        refreshSelectedIssue();
         setStatus(QStringLiteral("跟踪记录已更新"));
         return true;
     } catch (const std::exception& error) {
@@ -513,9 +601,48 @@ void AppController::deleteTimelineEntry(const QString& id) {
         store_->softDeleteTimelineEntry(id.toUtf8().toStdString());
         refreshTimeline();
         refreshIssues();
+        refreshSelectedIssue();
+        refreshTrash();
         setStatus(QStringLiteral("跟踪记录已删除"));
     } catch (const std::exception& error) {
         setStatus(QStringLiteral("删除失败：") + QString::fromUtf8(error.what()));
+    }
+}
+
+bool AppController::restoreTimelineEntry(const QString& id) {
+    try {
+        if (!store_ || id.trimmed().isEmpty()) {
+            throw std::runtime_error("请选择要恢复的记录");
+        }
+        store_->restoreTimelineEntry(id.toUtf8().toStdString());
+        refreshIssues();
+        refreshTrash();
+        refreshTimeline();
+        refreshSelectedIssue();
+        setStatus(QStringLiteral("事件记录已从回收站恢复"));
+        return true;
+    } catch (const std::exception& error) {
+        setStatus(QStringLiteral("恢复失败：") + QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool AppController::permanentlyDeleteTimelineEntry(const QString& id) {
+    try {
+        if (!store_ || id.trimmed().isEmpty()) {
+            throw std::runtime_error("请选择要永久删除的记录");
+        }
+        store_->permanentlyDeleteTimelineEntry(id.toUtf8().toStdString());
+        refreshIssues();
+        refreshTrash();
+        refreshTimeline();
+        refreshSelectedIssue();
+        setStatus(QStringLiteral("事件记录及其附件已永久删除"));
+        return true;
+    } catch (const std::exception& error) {
+        refreshTrash();
+        setStatus(QStringLiteral("永久删除失败：") + QString::fromUtf8(error.what()));
+        return false;
     }
 }
 
@@ -541,6 +668,7 @@ void AppController::pasteScreenshot(const QString& timelineEntryId) {
              static_cast<std::size_t>(bytes.size())}));
         refreshTimeline();
         refreshIssues();
+        refreshSelectedIssue();
         setStatus(QStringLiteral("截图已保存到工作区"));
     } catch (const std::exception& error) {
         setStatus(QStringLiteral("粘贴失败：") + QString::fromUtf8(error.what()));
@@ -569,6 +697,7 @@ void AppController::attachFile(const QString& timelineEntryId,
              static_cast<std::size_t>(bytes.size())}));
         refreshTimeline();
         refreshIssues();
+        refreshSelectedIssue();
         setStatus(QStringLiteral("附件已复制到工作区"));
     } catch (const std::exception& error) {
         setStatus(QStringLiteral("添加附件失败：") + QString::fromUtf8(error.what()));
@@ -588,7 +717,7 @@ void AppController::deleteAttachment(const QString& id) {
         refreshTimeline();
         refreshDescriptionAttachments();
         refreshIssues();
-        setStatus(QStringLiteral("附件已移入回收站"));
+        setStatus(QStringLiteral("附件已从事件中隐藏，原文件仍保留"));
     } catch (const std::exception& error) {
         setStatus(QStringLiteral("删除附件失败：") + QString::fromUtf8(error.what()));
     }
@@ -680,7 +809,17 @@ void AppController::refreshIssues() {
                 {QStringLiteral("reportedAt"),
                  QDateTime::fromMSecsSinceEpoch(issue.reportedAt).toString(
                      QStringLiteral("yyyy-MM-dd HH:mm"))},
-                {QStringLiteral("reportedAtMs"), issue.reportedAt}});
+                {QStringLiteral("reportedAtMs"), issue.reportedAt},
+                {QStringLiteral("createdAt"),
+                 QDateTime::fromMSecsSinceEpoch(issue.createdAt).toString(
+                     QStringLiteral("yyyy-MM-dd HH:mm"))},
+                {QStringLiteral("createdAtMs"), issue.createdAt},
+                {QStringLiteral("resolvedAt"), issue.resolvedAt
+                    ? QDateTime::fromMSecsSinceEpoch(*issue.resolvedAt).toString(
+                          QStringLiteral("yyyy-MM-dd HH:mm"))
+                    : QString{}},
+                {QStringLiteral("resolvedAtMs"),
+                 issue.resolvedAt ? QVariant::fromValue(*issue.resolvedAt) : QVariant{}}});
         }
         calendarIssues_ = std::move(calendar);
         emit calendarIssuesChanged();
@@ -690,6 +829,44 @@ void AppController::refreshIssues() {
     } catch (const std::exception& error) {
         setStatus(QStringLiteral("读取失败：") + QString::fromUtf8(error.what()));
     }
+}
+
+void AppController::refreshTrash() {
+    QVariantList deletedIssues;
+    QVariantList deletedEntries;
+    if (store_) {
+        try {
+            QHash<QString, QString> issueTitles;
+            for (const auto& issue : store_->listIssues()) {
+                issueTitles.insert(fromUtf8(issue.id), fromUtf8(issue.title));
+            }
+            for (const auto& issue : store_->listDeletedIssues()) {
+                issueTitles.insert(fromUtf8(issue.id), fromUtf8(issue.title));
+                deletedIssues.push_back(toVariantMap(issue));
+            }
+            for (const auto& entry : store_->listDeletedTimelineEntries()) {
+                const auto issueId = fromUtf8(entry.issueId);
+                deletedEntries.push_back(QVariantMap{
+                    {QStringLiteral("id"), fromUtf8(entry.id)},
+                    {QStringLiteral("issueId"), issueId},
+                    {QStringLiteral("issueTitle"), issueTitles.value(issueId)},
+                    {QStringLiteral("type"), fromUtf8(entry.type)},
+                    {QStringLiteral("content"), fromUtf8(entry.contentMarkdown)},
+                    {QStringLiteral("occurredAt"),
+                     QDateTime::fromMSecsSinceEpoch(entry.occurredAt).toString(
+                         QStringLiteral("yyyy-MM-dd HH:mm:ss"))},
+                    {QStringLiteral("deletedAt"), entry.deletedAt
+                         ? QDateTime::fromMSecsSinceEpoch(*entry.deletedAt).toString(
+                               QStringLiteral("yyyy-MM-dd HH:mm:ss"))
+                         : QString{}}});
+            }
+        } catch (const std::exception& error) {
+            setStatus(QStringLiteral("读取回收站失败：") + QString::fromUtf8(error.what()));
+        }
+    }
+    trashIssues_ = std::move(deletedIssues);
+    trashTimelineEntries_ = std::move(deletedEntries);
+    emit trashChanged();
 }
 
 void AppController::refreshEditorIssues() {
@@ -1297,13 +1474,17 @@ void AppController::openWorkspace(const QString& path) {
         descriptionAttachments_.clear();
         editorIssues_.clear();
         issueGroups_.clear();
+        trashIssues_.clear();
+        trashTimelineEntries_.clear();
         emit workspacePathChanged();
         emit selectedIssueChanged();
         emit timelineChanged();
         emit descriptionAttachmentsChanged();
         emit editorIssuesChanged();
         emit issueGroupsChanged();
+        emit trashChanged();
         refreshIssues();
+        refreshTrash();
         refreshFieldOptions();
         setStatus(QStringLiteral("工作区已就绪"));
     } catch (const std::exception& error) {
@@ -1321,6 +1502,12 @@ void AppController::setSelected(const issuetrace::StoredIssue& issue) {
     selectedIssue_ = toVariantMap(issue);
     emit selectedIssueChanged();
     refreshDescriptionAttachments();
+}
+
+void AppController::refreshSelectedIssue() {
+    if (!store_ || selectedIssue_.isEmpty()) return;
+    const auto id = toUtf8(selectedIssue_, "id");
+    if (const auto issue = store_->findIssue(id)) setSelected(*issue);
 }
 
 void AppController::refreshDescriptionAttachments() {
@@ -1354,6 +1541,7 @@ void AppController::refreshTimeline() {
             value.insert(QStringLiteral("occurredAt"),
                          QDateTime::fromMSecsSinceEpoch(entry.occurredAt).toString(
                              QStringLiteral("yyyy-MM-dd HH:mm:ss")));
+            value.insert(QStringLiteral("occurredAtMs"), entry.occurredAt);
             QVariantList attachments;
             for (const auto& attachment : store_->listAttachments(entry.id)) {
                 QVariantMap item;
@@ -1416,6 +1604,7 @@ QVariantMap AppController::toVariantMap(const issuetrace::StoredIssue& issue) co
     result.insert(QStringLiteral("createdAt"),
                   QDateTime::fromMSecsSinceEpoch(issue.createdAt).toString(
                       QStringLiteral("yyyy-MM-dd HH:mm")));
+    result.insert(QStringLiteral("created_at"), result.value(QStringLiteral("createdAt")));
     result.insert(QStringLiteral("createdAtMs"), issue.createdAt);
     result.insert(QStringLiteral("updatedAtMs"), issue.updatedAt);
     const auto now = QDateTime::currentMSecsSinceEpoch();
@@ -1433,6 +1622,9 @@ QVariantMap AppController::toVariantMap(const issuetrace::StoredIssue& issue) co
     result.insert(QStringLiteral("trackedTotalMilliseconds"),
         issue.trackedMilliseconds + (issue.timerStartedAt
             ? std::max<std::int64_t>(0, now - *issue.timerStartedAt) : 0));
+    result.insert(QStringLiteral("deletedAt"), issue.deletedAt
+        ? QDateTime::fromMSecsSinceEpoch(*issue.deletedAt).toString(
+              QStringLiteral("yyyy-MM-dd HH:mm:ss")) : QString{});
     return result;
 }
 

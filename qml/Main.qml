@@ -18,6 +18,13 @@ ApplicationWindow {
 
     property url pendingRestoreFolder: ""
     property url pendingUpdateArchive: ""
+    property string pendingDeleteIssueId: ""
+    property string pendingDeleteIssueTitle: ""
+    property string pendingDeleteTimelineId: ""
+    property string pendingDeleteTimelinePreview: ""
+    property string pendingPermanentDeleteKind: ""
+    property string pendingPermanentDeleteId: ""
+    property string pendingPermanentDeleteTitle: ""
     readonly property var statusOptions: [
         { value: "pending", label: "待处理" },
         { value: "investigating", label: "处理中" },
@@ -85,6 +92,22 @@ ApplicationWindow {
             new Date(Date.now() + 2 * 60 * 60 * 1000), "yyyy-MM-dd HH:mm")
         customReminderError.text = ""
         customReminderDialog.open()
+    }
+    function requestIssueDeletion(issueId, issueTitle) {
+        pendingDeleteIssueId = issueId
+        pendingDeleteIssueTitle = issueTitle
+        deleteIssueConfirm.open()
+    }
+    function requestTimelineDeletion(entryId, preview) {
+        pendingDeleteTimelineId = entryId
+        pendingDeleteTimelinePreview = preview
+        deleteTimelineConfirm.open()
+    }
+    function requestPermanentDeletion(kind, id, title) {
+        pendingPermanentDeleteKind = kind
+        pendingPermanentDeleteId = id
+        pendingPermanentDeleteTitle = title
+        permanentDeleteConfirm.open()
     }
     function trackedDurationText() {
         let value = Number(App.selectedIssue.trackedMilliseconds || 0)
@@ -240,6 +263,8 @@ ApplicationWindow {
             statusOptions: root.statusOptions
             onIssueRequested: issueId => root.selectIssue(issueId)
             onEditIssueRequested: issueId => root.editIssue(issueId)
+            onDeleteIssueRequested: (issueId, issueTitle) =>
+                root.requestIssueDeletion(issueId, issueTitle)
             onFilterRequested: (text, status, priority, tags, minimumMinutes,
                                 maximumMinutes, groupPath, service, version,
                                 ticket, sort) =>
@@ -304,6 +329,11 @@ ApplicationWindow {
                             ? App.pauseSelectedIssueTimer() : App.startSelectedIssueTimer()
                     }
                     Button { text: "导出事件"; onClicked: exportDialog.open() }
+                    QuietButton {
+                        text: "删除事件"
+                        onClicked: root.requestIssueDeletion(
+                            App.selectedIssue.id, App.selectedIssue.title)
+                    }
                 }
 
                 RowLayout {
@@ -378,6 +408,8 @@ ApplicationWindow {
                     id: timelineList
                     controller: App
                     typeOptions: root.timelineTypeOptions
+                    onDeleteRequested: (entryId, preview) =>
+                        root.requestTimelineDeletion(entryId, preview)
                 }
             }
 
@@ -531,8 +563,124 @@ ApplicationWindow {
         }
         onOpened: customReminderValue.forceActiveFocus()
     }
+    Dialog {
+        id: deleteIssueConfirm
+        objectName: "deleteIssueConfirmDialog"
+        title: "确认删除事件？"
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Yes | Dialog.No
+        onAccepted: {
+            if (App.deleteIssue(root.pendingDeleteIssueId)) root.currentPage = 0
+            root.pendingDeleteIssueId = ""
+            root.pendingDeleteIssueTitle = ""
+        }
+        onRejected: {
+            root.pendingDeleteIssueId = ""
+            root.pendingDeleteIssueTitle = ""
+        }
+        ColumnLayout {
+            width: 420
+            Label {
+                Layout.fillWidth: true
+                text: root.pendingDeleteIssueTitle
+                font.bold: true
+                wrapMode: Text.Wrap
+            }
+            Label {
+                Layout.fillWidth: true
+                text: "删除后事件将进入回收站，并从管理、记录和日历页隐藏。"
+                color: palette.mid
+                wrapMode: Text.Wrap
+            }
+        }
+    }
+    Dialog {
+        id: deleteTimelineConfirm
+        objectName: "deleteTimelineConfirmDialog"
+        title: "确认删除这条记录？"
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Yes | Dialog.No
+        onAccepted: {
+            App.deleteTimelineEntry(root.pendingDeleteTimelineId)
+            root.pendingDeleteTimelineId = ""
+            root.pendingDeleteTimelinePreview = ""
+        }
+        onRejected: {
+            root.pendingDeleteTimelineId = ""
+            root.pendingDeleteTimelinePreview = ""
+        }
+        ColumnLayout {
+            width: 420
+            Label {
+                Layout.fillWidth: true
+                text: root.pendingDeleteTimelinePreview
+                maximumLineCount: 4
+                elide: Text.ElideRight
+                wrapMode: Text.Wrap
+            }
+            Label {
+                Layout.fillWidth: true
+                text: "该记录将进入回收站；关联的图片和附件会一并隐藏。"
+                color: palette.mid
+                wrapMode: Text.Wrap
+            }
+        }
+    }
+    TrashDialog {
+        id: trashDialog
+        controller: App
+        onPermanentIssueRequested: (issueId, title) =>
+            root.requestPermanentDeletion("issue", issueId, title)
+        onPermanentTimelineRequested: (entryId, preview) =>
+            root.requestPermanentDeletion("timeline", entryId, preview)
+    }
+    Dialog {
+        id: permanentDeleteConfirm
+        objectName: "permanentDeleteConfirmDialog"
+        title: "确认永久删除？"
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Yes | Dialog.No
+        onAccepted: {
+            if (root.pendingPermanentDeleteKind === "issue")
+                App.permanentlyDeleteIssue(root.pendingPermanentDeleteId)
+            else if (root.pendingPermanentDeleteKind === "timeline")
+                App.permanentlyDeleteTimelineEntry(root.pendingPermanentDeleteId)
+            root.pendingPermanentDeleteKind = ""
+            root.pendingPermanentDeleteId = ""
+            root.pendingPermanentDeleteTitle = ""
+        }
+        onRejected: {
+            root.pendingPermanentDeleteKind = ""
+            root.pendingPermanentDeleteId = ""
+            root.pendingPermanentDeleteTitle = ""
+        }
+        ColumnLayout {
+            width: 440
+            Label {
+                Layout.fillWidth: true
+                text: root.pendingPermanentDeleteTitle
+                font.bold: true
+                maximumLineCount: 3
+                elide: Text.ElideRight
+                wrapMode: Text.Wrap
+            }
+            Label {
+                Layout.fillWidth: true
+                text: root.pendingPermanentDeleteKind === "issue"
+                    ? "事件、全部处理记录及附件文件都会被永久删除，且无法恢复。"
+                    : "该记录及其附件文件都会被永久删除，且无法恢复。"
+                color: "#b42318"
+                wrapMode: Text.Wrap
+            }
+        }
+    }
     Menu {
         id: toolsMenu
+        MenuItem { text: "回收站…"; onTriggered: trashDialog.open() }
+        MenuSeparator {}
         MenuItem { text: "验证工作区"; onTriggered: App.verifyWorkspace() }
         MenuItem { text: "切换工作区…"; onTriggered: workspaceDialog.open() }
         MenuItem { text: "创建完整备份…"; onTriggered: backupDialog.open() }

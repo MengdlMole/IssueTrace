@@ -193,6 +193,22 @@ Dialog {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true
+                    Label { text: "创建时间"; font.bold: true }
+                    TextField {
+                        Layout.fillWidth: true
+                        text: root.draftIssue.created_at || ""
+                        placeholderText: "yyyy-MM-dd HH:mm"
+                        selectByMouse: true
+                        onTextEdited: root.setDraftField("created_at", text)
+                    }
+                    Label {
+                        text: "使用本机时区，不能晚于当前时间"
+                        color: palette.mid
+                        font.pixelSize: 11
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
                     Label { text: "提出时间"; font.bold: true }
                     Label { text: root.draftIssue.reported_at || "—"; color: palette.mid; padding: 7 }
                 }

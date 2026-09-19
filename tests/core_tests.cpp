@@ -139,7 +139,19 @@ void testIssueStoreCrudAndPersistence() {
         issue->groupName = "支付域";
         issue->tags = "线上,超时";
         issue->conclusion = "连接池耗尽";
+        const auto correctedCreatedAt = created.createdAt - 86'400'000;
+        issue->createdAt = correctedCreatedAt;
         store.updateIssue(*issue);
+        assert(store.findIssue(id)->createdAt == correctedCreatedAt);
+        auto invalidDates = *store.findIssue(id);
+        invalidDates.resolvedAt = correctedCreatedAt - 1;
+        bool invalidDateOrderRejected = false;
+        try {
+            store.updateIssue(invalidDates);
+        } catch (const std::invalid_argument&) {
+            invalidDateOrderRejected = true;
+        }
+        assert(invalidDateOrderRejected);
         const auto updatedBeforeReminder = store.findIssue(id)->updatedAt;
         expectedRemindAt += 60000;
         store.setIssueReminder(id, expectedRemindAt);
@@ -167,7 +179,12 @@ void testIssueStoreCrudAndPersistence() {
             id, "progress", "已定位到连接池耗尽");
         assert(store.listTimelineEntries(id).size() == 2);
         assert(store.currentProgress(id) == "已定位到连接池耗尽");
-        store.updateTimelineEntry(note.id, "progress", "正在检查连接池");
+        const auto correctedOccurredAt = note.occurredAt - 3'600'000;
+        store.updateTimelineEntry(note.id, "progress", "正在检查连接池",
+                                  correctedOccurredAt);
+        const auto correctedEntry = store.listTimelineEntries(id).back();
+        assert(correctedEntry.id == note.id);
+        assert(correctedEntry.occurredAt == correctedOccurredAt);
         store.softDeleteTimelineEntry(progress.id);
         assert(store.currentProgress(id) == "正在检查连接池");
 
@@ -264,6 +281,34 @@ void testIssueStoreCrudAndPersistence() {
         assert(reopened.listTimelineEntries(id).size() == 1);
         const auto entry = reopened.listTimelineEntries(id).front();
         assert(reopened.listAttachments(entry.id).size() == 1);
+        bool activeTimelinePurgeRejected = false;
+        try {
+            reopened.permanentlyDeleteTimelineEntry(entry.id);
+        } catch (const std::exception&) {
+            activeTimelinePurgeRejected = true;
+        }
+        assert(activeTimelinePurgeRejected);
+        const auto deletedEntryCount = reopened.listDeletedTimelineEntries().size();
+        reopened.softDeleteTimelineEntry(entry.id);
+        assert(reopened.listDeletedTimelineEntries().size() == deletedEntryCount + 1);
+        assert(reopened.listDeletedTimelineEntries().front().deletedAt.has_value());
+        reopened.restoreTimelineEntry(entry.id);
+        assert(reopened.listDeletedTimelineEntries().size() == deletedEntryCount);
+        assert(reopened.listTimelineEntries(id).size() == 1);
+
+        const auto disposable = reopened.createTimelineEntry(
+            id, "note", "待永久删除记录");
+        const std::array<unsigned char, 4> disposableBytes{1, 2, 3, 4};
+        const auto disposableAttachment = reopened.addAttachment(
+            disposable.id, "temporary.log", "text/plain", "temporary-sha",
+            disposableBytes);
+        const auto disposablePath = root / disposableAttachment.relativePath;
+        assert(std::filesystem::exists(disposablePath));
+        reopened.softDeleteTimelineEntry(disposable.id);
+        reopened.permanentlyDeleteTimelineEntry(disposable.id);
+        assert(reopened.listDeletedTimelineEntries().size() == deletedEntryCount);
+        assert(!std::filesystem::exists(disposablePath));
+
         reopened.softDeleteAttachment(attachmentId);
         assert(reopened.listAttachments(entry.id).empty());
         assert(reopened.searchIssues({"排查截图", "", "", ""}).empty());
@@ -273,7 +318,16 @@ void testIssueStoreCrudAndPersistence() {
         assert(!reopened.findIssue(id).has_value());
         reopened.restoreIssue(id);
         assert(reopened.findIssue(id).has_value());
+        assert(!reopened.findIssue(id)->timerStartedAt.has_value());
         assert(reopened.listDeletedIssues().empty());
+        bool activeIssuePurgeRejected = false;
+        try {
+            reopened.permanentlyDeleteIssue(id);
+        } catch (const std::exception&) {
+            activeIssuePurgeRejected = true;
+        }
+        assert(activeIssuePurgeRejected);
+        reopened.startIssueTimer(id);
         reopened.softDeleteIssue(id);
     }
     {
@@ -285,6 +339,13 @@ void testIssueStoreCrudAndPersistence() {
             rejected = true;
         }
         assert(rejected);
+        assert(reopened.listDeletedIssues().size() == 1);
+        reopened.restoreIssue(id);
+        assert(!reopened.findIssue(id)->timerStartedAt.has_value());
+        reopened.softDeleteIssue(id);
+        reopened.permanentlyDeleteIssue(id);
+        assert(reopened.listDeletedIssues().empty());
+        assert(!std::filesystem::exists(root / attachmentRelativePath));
     }
     issuetrace::IssueStore::restoreBackup(backupPath, restoredRoot);
     {
